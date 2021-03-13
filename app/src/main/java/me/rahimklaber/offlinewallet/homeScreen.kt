@@ -11,9 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -21,6 +19,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigate
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.launch
 import java.util.*
 
 val account = User("Godking")
@@ -31,6 +30,7 @@ val transactions = (0..22).map { if (it % 2 == 0) tx1 else tx2 }
 /**
  * The maain screen of the application.
  */
+@OptIn(ExperimentalMaterialApi::class)
 @Composable
 fun MainScreen() {
     val nav = rememberNavController()
@@ -49,7 +49,7 @@ fun MainScreen() {
                 HomeScreen(nav = nav, modifier = Modifier.padding(padding))
             }
             composable("send") {
-                SelectSendScreen()
+
             }
             composable("receive") {
                 Text("RECEIVE SHIT")
@@ -65,14 +65,15 @@ fun MainScreen() {
  * Screen to select how to send money; either offline or online
  */
 @OptIn(ExperimentalFoundationApi::class)
+@ExperimentalMaterialApi
 @Composable
 fun SelectSendScreen(modifier: Modifier = Modifier) {
-    Column {
-        TopAppBar() {
+    Column(modifier = modifier) {
+        TopAppBar {
 
-            Text(text = "Offline methods",fontWeight = FontWeight(700),fontSize = 32.sp)
+            Text(text = "Online methods", fontWeight = FontWeight(700), fontSize = 32.sp)
         }
-        
+
         Row {
             Card(modifier = Modifier.padding(10.dp)) {
                 Column {
@@ -95,9 +96,9 @@ fun SelectSendScreen(modifier: Modifier = Modifier) {
 
         }
 
-        Card() {
+        TopAppBar {
 
-            Text(text = "Offline methods",fontWeight = FontWeight(700),fontSize = 32.sp)
+            Text(text = "Offline methods", fontWeight = FontWeight(700), fontSize = 32.sp)
         }
         Row {
             Card(modifier = Modifier.padding(10.dp)) {
@@ -110,7 +111,6 @@ fun SelectSendScreen(modifier: Modifier = Modifier) {
                     Text(text = "Qr Code")
                 }
             }
-
 
 
         }
@@ -188,6 +188,7 @@ fun SendScreen(modifier: Modifier = Modifier) {
  * Composable representing the Homescreen of the app.
  * Includes : [Balance], [TransactionList] and [BottomRow]
  */
+@ExperimentalMaterialApi
 @Composable
 fun HomeScreen(modifier: Modifier = Modifier, nav: NavController) {
     Column(modifier = modifier) {
@@ -224,20 +225,43 @@ fun Balance(modifier: Modifier = Modifier) {
  * @param modifier modifier to pass in
  * @param nav the nav controller to use to get to the send and receive page.
  */
+@ExperimentalMaterialApi
 @Composable
 fun BottomRow(modifier: Modifier = Modifier, nav: NavController) {
-    //TODO why do I have to do this?
-    Card(modifier = modifier) {
+    val bottomSheetScaffoldState = rememberBottomSheetScaffoldState(
+        bottomSheetState = BottomSheetState(BottomSheetValue.Collapsed)
+    )
+    val coroutineScope = rememberCoroutineScope()
+
+    Card(modifier = modifier.height(100.dp)) {
         Row(
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
-                .fillMaxWidth(1f)
-                .padding(10.dp)
         ) {
-            Button(onClick = { nav.navigate("send") }, modifier = Modifier.fillMaxWidth(0.4f)) {
-                Text(text = "Send")
+            BottomSheetScaffold(
+                scaffoldState = bottomSheetScaffoldState,
+                sheetContent = { SelectSendScreen() },
+                sheetPeekHeight = 0.dp,
+                modifier = Modifier.fillMaxWidth(0.4f)
+            ) {
+                Button(onClick = {
+                    coroutineScope.launch {
+
+                        if (bottomSheetScaffoldState.bottomSheetState.isCollapsed) {
+                            bottomSheetScaffoldState.bottomSheetState.expand()
+                        } else {
+                            bottomSheetScaffoldState.bottomSheetState.collapse()
+                        }
+                    }
+                }, modifier = Modifier
+                    .padding(it)
+                    .fillMaxWidth(0.4f)) {
+                    Text(text = "Send")
+                }
             }
+
+
             Button(onClick = { nav.navigate("receive") }, modifier = Modifier.fillMaxWidth(0.66f)) {
                 Text(text = "Receive")
             }
