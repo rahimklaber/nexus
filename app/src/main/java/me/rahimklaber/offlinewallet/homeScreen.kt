@@ -1,11 +1,13 @@
 package me.rahimklaber.offlinewallet
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,24 +21,29 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigate
 import androidx.navigation.compose.rememberNavController
-import kotlinx.coroutines.launch
+import org.stellar.sdk.KeyPair
 import java.util.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
+import kotlinx.coroutines.launch
+
 
 val account = User("Godking")
 val tx1 = Transaction.Sent(account, "USD", 20.11f, Date(), "ueet")
 val tx2 = Transaction.Received(account, "USD", 20.11f, Date(), "yeet")
-val transactions = (0..22).map { if (it % 2 == 0) tx1 else tx2 }
-
 /**
  * The maain screen of the application.
  */
+val seed = "SDGJHP5WUXNDQLRLBOMIM2TSD2JZWYYLTSM5JI7LYWUIT6SQ7XMNLXXA"
+val pubKey = "GBZTOCTK7UQXL2B7ABYWTLZDHCKN2YVZKBKPQJ75IL4YAYJ3OGE4FEFQ"
+//val wallet = Wallet(keyPair = KeyPair.fromSecretSeed(seed))
+
 @OptIn(ExperimentalMaterialApi::class)
 @Composable
 fun MainScreen() {
     val nav = rememberNavController()
-
+    val wallet =  remember{Wallet(keyPair = KeyPair.fromSecretSeed(seed))}
     val scaffoldState = rememberScaffoldState(rememberDrawerState(DrawerValue.Closed))
-
     Scaffold(
         scaffoldState = scaffoldState,
 //        topBar = { TopAppBar(title = { Text("Home") }) },
@@ -46,7 +53,7 @@ fun MainScreen() {
         val padding = it
         NavHost(navController = nav, startDestination = "home") {
             composable("home") {
-                HomeScreen(nav = nav, modifier = Modifier.padding(padding))
+                HomeScreen(nav = nav, wallet= wallet, modifier = Modifier.padding(padding))
             }
             composable("send") {
 
@@ -64,8 +71,6 @@ fun MainScreen() {
 /**
  * Screen to select how to send money; either offline or online
  */
-@OptIn(ExperimentalFoundationApi::class)
-@ExperimentalMaterialApi
 @Composable
 fun SelectSendScreen(modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
@@ -186,16 +191,53 @@ fun SendScreen(modifier: Modifier = Modifier) {
 
 /**
  * Composable representing the Homescreen of the app.
- * Includes : [Balance], [TransactionList] and [BottomRow]
+ * Includes : [Balance], [RecentTransactions] and [BottomRow]
  */
 @ExperimentalMaterialApi
 @Composable
-fun HomeScreen(modifier: Modifier = Modifier, nav: NavController) {
+fun HomeScreen(modifier: Modifier = Modifier, nav: NavController, wallet: Wallet) {
+
     Column(modifier = modifier) {
-        Balance(Modifier.padding(top = 10.dp))
-        TransactionList(transactions = transactions, modifier = Modifier.weight(1f), nav = nav)
-        BottomRow(modifier = Modifier.padding(bottom = 10.dp), nav = nav)
+        Balance(Modifier.padding(top = 10.dp), wallet.assetsBalances)
+        SendOptionsRow(Modifier.padding(top = 10.dp))
+        RecentTransactions(transactions = wallet.transactions, modifier = Modifier.weight(1f), nav = nav)
+        BottomRow(modifier = Modifier.padding(bottom = 10.dp),nav)
     }
+
+
+}
+
+/**
+ * Row showing the different options for sending assets.
+ */
+@Composable
+fun SendOptionsRow(modifier: Modifier = Modifier){
+    Card(modifier = modifier.fillMaxWidth(1f)) {
+
+
+            Row(horizontalArrangement = Arrangement.SpaceBetween){
+                Text(text = "Send",fontWeight = FontWeight(759))
+                Card() {
+
+                    Column() {
+                        Text(text = "Online qr")
+                        Icon(Icons.Default.QrCode,null)
+                    }
+                }
+                Column {
+                    Text(text = "Offline qr")
+                    Icon(Icons.Default.QrCode,"Offline qr")
+
+                }
+                Column {
+                    Text(text = "username")
+                    Icon(Icons.Default.Face,"Offline qr")
+
+                }
+            }
+
+    }
+
 }
 
 /**
@@ -204,7 +246,7 @@ fun HomeScreen(modifier: Modifier = Modifier, nav: NavController) {
  * @param modifier Modifier to pass.
  */
 @Composable
-fun Balance(modifier: Modifier = Modifier) {
+fun Balance(modifier: Modifier = Modifier, balances: Map<Asset,String>) {
     Card(modifier = modifier.fillMaxWidth(1f)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(fontWeight = FontWeight(600), text = "Balance")
@@ -213,7 +255,7 @@ fun Balance(modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 Image(painterResource(R.drawable.uscoin), null, modifier = Modifier.height(50.dp))
-                Text(text = " 200.20")
+                Text(text = balances[Asset.Native] ?: "Not available")
             }
         }
     }
@@ -227,38 +269,24 @@ fun Balance(modifier: Modifier = Modifier) {
  */
 @ExperimentalMaterialApi
 @Composable
-fun BottomRow(modifier: Modifier = Modifier, nav: NavController) {
-    val bottomSheetScaffoldState = rememberBottomSheetScaffoldState(
-        bottomSheetState = BottomSheetState(BottomSheetValue.Collapsed)
-    )
-    val coroutineScope = rememberCoroutineScope()
+fun BottomRow(
+    modifier: Modifier = Modifier,
+    nav: NavController,
+) {
 
-    Card(modifier = modifier.height(100.dp)) {
+    val scope = rememberCoroutineScope()
+    Card(modifier = modifier.fillMaxWidth(1f)) {
         Row(
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
         ) {
-            BottomSheetScaffold(
-                scaffoldState = bottomSheetScaffoldState,
-                sheetContent = { SelectSendScreen() },
-                sheetPeekHeight = 0.dp,
-                modifier = Modifier.fillMaxWidth(0.4f)
-            ) {
-                Button(onClick = {
-                    coroutineScope.launch {
 
-                        if (bottomSheetScaffoldState.bottomSheetState.isCollapsed) {
-                            bottomSheetScaffoldState.bottomSheetState.expand()
-                        } else {
-                            bottomSheetScaffoldState.bottomSheetState.collapse()
-                        }
-                    }
-                }, modifier = Modifier
-                    .padding(it)
-                    .fillMaxWidth(0.4f)) {
-                    Text(text = "Send")
-                }
+            Button(
+                onClick = {}, modifier = Modifier
+                    .fillMaxWidth(0.4f)
+            ) {
+                Text(text = "Send")
             }
 
 
@@ -277,7 +305,6 @@ fun BottomRow(modifier: Modifier = Modifier, nav: NavController) {
  *
  * Uses a lazyColumn under the hood.
  *
- * @param transactions list of transactions to render.
  * @param modifier Modifier to pass.
  * @param contentPadding padding for the internal content, //TODO can this be done with the modifier?
  * @param nav NavController to use for potentially going to a "more information" page for transactions.
@@ -285,20 +312,25 @@ fun BottomRow(modifier: Modifier = Modifier, nav: NavController) {
  * TODO: can't figure out how to make top and bottom part not have a rectangular white background even though they are circular
  */
 @Composable
-fun TransactionList(
-    transactions: List<Transaction>,
+fun RecentTransactions(
+    transactions : List<Transaction>,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(15.dp),
     nav: NavController
 ) {
-
-    LazyColumn(
-        contentPadding = contentPadding,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = modifier,
-    ) {
-        items(transactions) {
-            Transaction(transaction = it)
+    val txToUse = if (transactions.size > 4) transactions.subList(0,5) else transactions
+    Card{
+        Column {
+            Text(text = "Recent Transactions")
+            LazyColumn(
+                contentPadding = contentPadding,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = modifier,
+            ) {
+                items(txToUse) {
+                    Transaction(transaction = it)
+                }
+            }
         }
     }
 
@@ -314,6 +346,7 @@ fun TransactionList(
 fun Transaction(transaction: Transaction, onClick: () -> Unit = {}) {
     Card(
         Modifier
+            .height(50.dp)
             .fillMaxWidth(1f),
     ) {
         Row(
