@@ -3,10 +3,12 @@ package me.rahimklaber.offlinewallet
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,24 +27,25 @@ import org.stellar.sdk.KeyPair
 import java.util.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.ui.focus.focusModifier
+import com.skydoves.landscapist.coil.CoilImage
 import kotlinx.coroutines.launch
 
 
 val account = User("Godking")
-val tx1 = Transaction.Sent(account, "USD", 20.11f, Date(), "ueet")
-val tx2 = Transaction.Received(account, "USD", 20.11f, Date(), "yeet")
+
 /**
  * The maain screen of the application.
  */
 val seed = "SDGJHP5WUXNDQLRLBOMIM2TSD2JZWYYLTSM5JI7LYWUIT6SQ7XMNLXXA"
 val pubKey = "GBZTOCTK7UQXL2B7ABYWTLZDHCKN2YVZKBKPQJ75IL4YAYJ3OGE4FEFQ"
-//val wallet = Wallet(keyPair = KeyPair.fromSecretSeed(seed))
+val wallet = Wallet(keyPair = KeyPair.fromSecretSeed(seed))
 
 @OptIn(ExperimentalMaterialApi::class)
 @Composable
 fun MainScreen() {
     val nav = rememberNavController()
-    val wallet =  remember{Wallet(keyPair = KeyPair.fromSecretSeed(seed))}
+//    val wallet =  remember{Wallet(keyPair = KeyPair.fromSecretSeed(seed))}
     val scaffoldState = rememberScaffoldState(rememberDrawerState(DrawerValue.Closed))
     Scaffold(
         scaffoldState = scaffoldState,
@@ -247,6 +250,7 @@ fun SendOptionsRow(modifier: Modifier = Modifier){
  */
 @Composable
 fun Balance(modifier: Modifier = Modifier, balances: Map<Asset,String>) {
+
     Card(modifier = modifier.fillMaxWidth(1f)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(fontWeight = FontWeight(600), text = "Balance")
@@ -254,8 +258,26 @@ fun Balance(modifier: Modifier = Modifier, balances: Map<Asset,String>) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                Image(painterResource(R.drawable.uscoin), null, modifier = Modifier.height(50.dp))
-                Text(text = balances[Asset.Native] ?: "Not available")
+                LazyRow{
+                    items(balances.toList()){
+//                        Image(painterResource(R.drawable.uscoin), null, modifier = Modifier.height(50.dp))
+                        Card(modifier = Modifier.focusModifier()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CoilImage(imageModel = it.first.iconLink ?: Icons.Default.Place,
+                                    modifier = Modifier
+                                        .height(50.dp)
+                                        .width(50.dp)
+                                ) {
+                                    Text(text = "placeholder")
+                                }
+                                Text(text = it.second)
+                            }
+
+                        }
+
+                    }
+                }
+
             }
         }
     }
@@ -318,7 +340,7 @@ fun RecentTransactions(
     contentPadding: PaddingValues = PaddingValues(15.dp),
     nav: NavController
 ) {
-    val txToUse = if (transactions.size > 4) transactions.subList(0,5) else transactions
+    val txsToUse = if (transactions.size > 4) transactions.sortedByDescending { it.date }.subList(0,5) else transactions.sortedByDescending { it.date }
     Card{
         Column {
             Text(text = "Recent Transactions")
@@ -327,7 +349,7 @@ fun RecentTransactions(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = modifier,
             ) {
-                items(txToUse) {
+                items(txsToUse) {
                     Transaction(transaction = it)
                 }
             }
@@ -352,12 +374,18 @@ fun Transaction(transaction: Transaction, onClick: () -> Unit = {}) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Image(painterResource(R.drawable.uscoin), null, modifier = Modifier.height(50.dp))
+            CoilImage(imageModel = transaction.asset.iconLink ?: Icons.Default.Place,
+                modifier = Modifier
+                    .height(50.dp)
+                    .width(50.dp)
+            ) {
+                Text(text = "placeholder")
+            }
             val received = transaction is Transaction.Received
             Spacer(modifier = Modifier.width(10.dp))
             val color = if (received) Color.Green else Color.Red
             Column {
-                Text(text = "${transaction.amount} ${transaction.asset}")
+                Text(text = "${transaction.amount} ${transaction.asset.name}")
                 val text = if (received) "received" else "sent"
                 Text(fontWeight = FontWeight(10), text = text)
             }

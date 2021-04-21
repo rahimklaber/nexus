@@ -59,7 +59,9 @@ dependencies {
     implementation "androidx.compose.runtime:runtime:$compose_version"
     implementation "androidx.compose.runtime:runtime-livedata:$compose_version"
 //    implementation 'com.github.Gurupreet:FontAwesomeCompose:1.0.1-alpha01' causes app to crash
-
+    implementation 'com.github.kittinunf.fuel:fuel:2.3.1'
+    implementation 'com.github.kittinunf.fuel:fuel-android:2.3.1'
+    implementation "com.moandjiezana.toml:toml4j:0.7.2"
     implementation "com.github.skydoves:landscapist-coil:1.1.6"
 
 
