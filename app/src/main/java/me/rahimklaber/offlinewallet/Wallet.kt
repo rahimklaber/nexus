@@ -1,27 +1,18 @@
 package me.rahimklaber.offlinewallet
 
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.*
 import org.stellar.sdk.requests.EventListener
-import org.stellar.sdk.responses.TransactionResponse
 import org.stellar.sdk.responses.operations.OperationResponse
 import org.stellar.sdk.responses.operations.PaymentOperationResponse
-import org.stellar.sdk.xdr.OperationType
 import shadow.com.google.common.base.Optional
-import java.text.DateFormat.getDateTimeInstance
-import java.text.SimpleDateFormat
 import java.util.*
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import com.github.kittinunf.fuel.httpGet
 import com.moandjiezana.toml.Toml
-import okhttp3.Request
-import okio.Okio
 import org.stellar.sdk.*
-import java.util.Collections.addAll
 
 class Wallet(private val keyPair : KeyPair) : ViewModel() {
 
@@ -111,6 +102,29 @@ class Wallet(private val keyPair : KeyPair) : ViewModel() {
             it.issuer == issuer && it.name == code
         }
     }
+
+    /**
+     * find all assets which an account has trustlines to.
+     * Todo : should maybe put this somewhere else?
+     */
+    fun getAssetsForAccount(accountId: String): List<Asset> {
+        return server
+            .accounts()
+            .account(accountId)
+            .balances.map {
+                if (it.assetType == "native") {
+                    Asset.Native
+                } else {
+
+                        Asset.Custom(
+                            it.assetCode,
+                            it.assetIssuer,
+                            getAssetUrl(it.assetCode, it.assetIssuer)
+                        )
+                }
+            }
+    }
+
     private val listener = object : EventListener<OperationResponse>{
         override fun onEvent(response: OperationResponse) {
             if (response.type != "payment")

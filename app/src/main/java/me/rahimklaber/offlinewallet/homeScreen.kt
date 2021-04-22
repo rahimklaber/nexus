@@ -1,6 +1,7 @@
 package me.rahimklaber.offlinewallet
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -13,6 +14,7 @@ import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusModifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -23,13 +25,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigate
 import androidx.navigation.compose.rememberNavController
-import org.stellar.sdk.KeyPair
-import java.util.*
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.ui.focus.focusModifier
 import com.skydoves.landscapist.coil.CoilImage
-import kotlinx.coroutines.launch
+import org.stellar.sdk.KeyPair
 
 
 val account = User("Godking")
@@ -56,13 +53,16 @@ fun MainScreen() {
         val padding = it
         NavHost(navController = nav, startDestination = "home") {
             composable("home") {
-                HomeScreen(nav = nav, wallet= wallet, modifier = Modifier.padding(padding))
+                HomeScreen(nav = nav, wallet = wallet, modifier = Modifier.padding(padding))
             }
             composable("send") {
 
             }
             composable("receive") {
                 Text("RECEIVE SHIT")
+            }
+            composable("sendByUserName"){
+                SendByUserName(wallet = wallet, modifier = Modifier.padding(padding) )
             }
         }
 
@@ -201,10 +201,14 @@ fun SendScreen(modifier: Modifier = Modifier) {
 fun HomeScreen(modifier: Modifier = Modifier, nav: NavController, wallet: Wallet) {
 
     Column(modifier = modifier) {
-        Balance(Modifier.padding(top = 10.dp), wallet.assetsBalances)
-        SendOptionsRow(Modifier.padding(top = 10.dp))
-        RecentTransactions(transactions = wallet.transactions, modifier = Modifier.weight(1f), nav = nav)
-        BottomRow(modifier = Modifier.padding(bottom = 10.dp),nav)
+        Balance(Modifier.padding(10.dp), wallet.assetsBalances)
+        SendOptionsRow(Modifier.padding(10.dp), nav)
+        RecentTransactions(
+            transactions = wallet.transactions, modifier = Modifier
+                .weight(1f)
+                .padding(10.dp), nav = nav
+        )
+        BottomRow(modifier = Modifier.padding(10.dp), nav)
     }
 
 
@@ -214,30 +218,41 @@ fun HomeScreen(modifier: Modifier = Modifier, nav: NavController, wallet: Wallet
  * Row showing the different options for sending assets.
  */
 @Composable
-fun SendOptionsRow(modifier: Modifier = Modifier){
+fun SendOptionsRow(modifier: Modifier = Modifier, nav: NavController) {
     Card(modifier = modifier.fillMaxWidth(1f)) {
 
 
-            Row(horizontalArrangement = Arrangement.SpaceBetween){
-                Text(text = "Send",fontWeight = FontWeight(759))
-                Card() {
+        Row(modifier = Modifier, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(text = "Send", fontWeight = FontWeight(759))
+            Card(modifier.clickable {
+                nav.navigate("sendByUserName")
+            }){
 
-                    Column() {
-                        Text(text = "Online qr")
-                        Icon(Icons.Default.QrCode,null)
-                    }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(text = "Online qr")
+                    Icon(Icons.Default.QrCode, null, modifier.size(40.dp))
                 }
-                Column {
+            }
+            Card(modifier.clickable {
+                nav.navigate("sendByUserName")
+            }) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(text = "Offline qr")
-                    Icon(Icons.Default.QrCode,"Offline qr")
-
-                }
-                Column {
-                    Text(text = "username")
-                    Icon(Icons.Default.Face,"Offline qr")
+                    Icon(Icons.Default.QrCode, "Offline qr", modifier.size(40.dp))
 
                 }
             }
+            Card (
+                modifier.clickable {
+                nav.navigate("sendByUserName")
+            }){
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(text = "username")
+                    Icon(Icons.Default.Face, "Offline qr", modifier.size(40 .dp))
+
+                }
+            }
+        }
 
     }
 
@@ -249,36 +264,44 @@ fun SendOptionsRow(modifier: Modifier = Modifier){
  * @param modifier Modifier to pass.
  */
 @Composable
-fun Balance(modifier: Modifier = Modifier, balances: Map<Asset,String>) {
+fun Balance(modifier: Modifier = Modifier, balances: Map<Asset, String>) {
 
     Card(modifier = modifier.fillMaxWidth(1f)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(fontWeight = FontWeight(600), text = "Balance")
-            Row(
+
+            LazyRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                LazyRow{
-                    items(balances.toList()){
+                items(balances.toList()) {( asset,assetBalance) ->
 //                        Image(painterResource(R.drawable.uscoin), null, modifier = Modifier.height(50.dp))
-                        Card(modifier = Modifier.focusModifier()) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CoilImage(imageModel = it.first.iconLink ?: Icons.Default.Place,
-                                    modifier = Modifier
-                                        .height(50.dp)
-                                        .width(50.dp)
-                                ) {
-                                    Text(text = "placeholder")
-                                }
-                                Text(text = it.second)
+                    Card(
+                        modifier = Modifier
+                            .focusModifier()
+                            .padding(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CoilImage(
+                                imageModel = asset.iconLink ?: Icons.Default.Place /*TODO this doesnt work*/,
+                                modifier = Modifier
+                                    .height(50.dp)
+                                    .width(50.dp),
+                                alignment = Alignment.Center
+
+                            ) {
+                                Text(text = asset.name)
                             }
 
+                            Text(text = assetBalance)
                         }
 
                     }
-                }
 
+                }
             }
+
+
         }
     }
 }
@@ -335,20 +358,21 @@ fun BottomRow(
  */
 @Composable
 fun RecentTransactions(
-    transactions : List<Transaction>,
+    transactions: List<Transaction>,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(15.dp),
     nav: NavController
 ) {
-    val txsToUse = if (transactions.size > 4) transactions.sortedByDescending { it.date }.subList(0,5) else transactions.sortedByDescending { it.date }
-    Card{
-        Column {
+    val txsToUse = if (transactions.size > 4) transactions.sortedByDescending { it.date }
+        .subList(0, 5) else transactions.sortedByDescending { it.date }
+    Card(modifier = modifier) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(text = "Recent Transactions")
             LazyColumn(
                 contentPadding = contentPadding,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = modifier,
-            ) {
+
+                ) {
                 items(txsToUse) {
                     Transaction(transaction = it)
                 }
@@ -374,12 +398,13 @@ fun Transaction(transaction: Transaction, onClick: () -> Unit = {}) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CoilImage(imageModel = transaction.asset.iconLink ?: Icons.Default.Place,
+            CoilImage(
+                imageModel = transaction.asset.iconLink ?: "xd"/*just so this will fail*/,
                 modifier = Modifier
                     .height(50.dp)
                     .width(50.dp)
             ) {
-                Text(text = "placeholder")
+                Text(text = transaction.asset.name)
             }
             val received = transaction is Transaction.Received
             Spacer(modifier = Modifier.width(10.dp))

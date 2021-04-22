@@ -18,6 +18,6 @@ sealed class Asset{
     data class Custom(override val name: String, val issuer: String, override val iconLink : Any?) : Asset()
     companion object{
 
-        val NOT_FOUND = Custom("NOTFOUND","",null)
+        val NOT_FOUND : Asset = Custom("NOTFOUND","",null)
     }
 }
