@@ -9,9 +9,7 @@ import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skydoves.landscapist.coil.CoilImage
@@ -43,9 +41,9 @@ fun SendByUserName(wallet: Wallet, modifier: Modifier = Modifier){
                 var nickname by remember { mutableStateOf("") }
                 var description by remember { mutableStateOf("") }
                 var amount by remember { mutableStateOf("") }
-                var asset by remember { mutableStateOf(Asset.NOT_FOUND) } /*TODO: maybe replace NOT_FOUND by INVALID*/
+                var receiveAsset by remember { mutableStateOf(Asset.NOT_FOUND) } /*TODO: maybe replace NOT_FOUND by INVALID*/
                 var assetsSupportedByRecipient by remember { mutableStateOf(listOf<Asset>())}
-
+                var sendingAsset by remember { mutableStateOf(Asset.NOT_FOUND) }
 
                 val scope = rememberCoroutineScope()
 
@@ -56,14 +54,36 @@ fun SendByUserName(wallet: Wallet, modifier: Modifier = Modifier){
                     Text("Load Assets")
                 }
 
-                Text(text = "Asset", fontWeight = FontWeight(50))
-                DropdownAssetList(assets = assetsSupportedByRecipient, onSelectedAssetChanged = {asset = it})
+                Text(text = "Recipient asset", fontWeight = FontWeight(50))
+                DropdownAssetList(text = "select the asset that the recipient will receive",assets = assetsSupportedByRecipient, onSelectedAssetChanged = {receiveAsset = it})
 
-                Text(text = "amount", fontWeight = FontWeight(50))
+                Text(text = "Asset to send", fontWeight = FontWeight(50))
+                DropdownAssetList(text= "Select asset to send",assets = wallet.assetsBalances.keys.toList(), onSelectedAssetChanged = {sendingAsset = it})
+
+
+                Text(text = "amount (of recipient asset)", fontWeight = FontWeight(50))
                 TextField(value = amount, onValueChange = { amount = it })
 
                 Text(text = "description", fontWeight = FontWeight(50))
                 TextField(value = description, onValueChange = { description = it })
+
+
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Button(onClick = {
+                    println(receiveAsset)
+                    println(sendingAsset)
+                    println((sendingAsset == receiveAsset))
+                    scope.launch {
+                        val deferred = wallet.sendAsset(nickname,receiveAsset,sendingAsset,amount,description)
+                        println(deferred.await().resultXdr)
+                    }
+                }) {
+                    Text(text = "Send")
+                }
+
+
             }
 
         }
@@ -71,9 +91,9 @@ fun SendByUserName(wallet: Wallet, modifier: Modifier = Modifier){
 }
 
 @Composable
-fun DropdownAssetList(assets : List<Asset>, onSelectedAssetChanged : (Asset)-> Unit){
+fun DropdownAssetList(text: String, assets : List<Asset>, onSelectedAssetChanged : (Asset)-> Unit){
     var expanded by remember { mutableStateOf(false) }
-    var selectedText by remember { mutableStateOf("Select asset to send") }
+    var selectedText by remember { mutableStateOf(text) }
     var selectedAsset by remember { mutableStateOf(Asset.NOT_FOUND)}
     val icon = if (expanded)
         Icons.Filled.ArrowDropUp
@@ -100,6 +120,7 @@ fun DropdownAssetList(assets : List<Asset>, onSelectedAssetChanged : (Asset)-> U
                 DropdownMenuItem(onClick = {
                     selectedText = asset.name
                     selectedAsset = asset
+                    onSelectedAssetChanged(selectedAsset)
                 }) {
                     Row {
                         CoilImage(

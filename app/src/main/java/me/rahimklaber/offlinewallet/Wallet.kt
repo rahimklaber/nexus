@@ -1,59 +1,35 @@
 package me.rahimklaber.offlinewallet
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import com.github.kittinunf.fuel.httpGet
+import com.moandjiezana.toml.Toml
 import kotlinx.coroutines.*
+import org.stellar.sdk.*
+import org.stellar.sdk.Account
 import org.stellar.sdk.requests.EventListener
+import org.stellar.sdk.responses.SubmitTransactionResponse
 import org.stellar.sdk.responses.operations.OperationResponse
 import org.stellar.sdk.responses.operations.PaymentOperationResponse
 import shadow.com.google.common.base.Optional
 import java.util.*
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import com.github.kittinunf.fuel.httpGet
-import com.moandjiezana.toml.Toml
-import org.stellar.sdk.*
 
 class Wallet(private val keyPair : KeyPair) : ViewModel() {
 
     var transactions : List<Transaction> by mutableStateOf(listOf())
     private val server = Server("https://horizon-testnet.stellar.org")
     var assetsBalances : Map<Asset,String>  by mutableStateOf(mapOf())
+    lateinit var account : Account
     init {
-//
-//      var payments = runBlocking(Dispatchers.IO) {
-//           server.payments()
-//               .forAccount(keyPair.accountId)
-//               .execute().records
-//       }.toMutableList()
-//        payments = payments.filter { it.type == "payment" } as MutableList<OperationResponse>
-//        val transactionsToAdd = payments.map {
-//            val payment = it as PaymentOperationResponse
-//            if(it.sourceAccount == keyPair.accountId){
-//                Transaction.Sent(
-//                    recipient = User(payment.to),
-//                    asset = payment.asset.type,
-//                    amount =  payment.amount.toFloat(),
-//                    date = /*SimpleDateFormat().parse(payment.createdAt.removeSuffix("Z")) ?:*/ Date(),
-//                    description = payment.transaction.orNull()?.memo?.toString() ?: "No desc",
-//                )
-//            }else{
-//                Transaction.Received(
-//                    from = User(payment.from),
-//                    asset = payment.asset.type,
-//                    amount =  payment.amount.toFloat(),
-//                    date = /*SimpleDateFormat().parse(payment.createdAt.removeSuffix("Z")) ?:*/ Date(),
-//                    description = payment.transaction.orNull()?.memo?.toString() ?: "No desc",
-//                )
-//            }
-//        }
-//
-//        transactions = transactions.toMutableList().also {
-//            it.addAll(transactionsToAdd)
-//        }
-
         GlobalScope.launch(Dispatchers.IO) {
-            delay(5000)
+            delay(1000)
+            val sequenceNumber = server.accounts().account(keyPair.accountId).sequenceNumber
+            account = org.stellar.sdk.Account(keyPair.accountId,sequenceNumber)
+        }
+        GlobalScope.launch(Dispatchers.IO) {
+            delay(1000)
             updateBalance()
             server.payments().forAccount(keyPair.accountId).stream(listener)
         }
@@ -202,6 +178,53 @@ class Wallet(private val keyPair : KeyPair) : ViewModel() {
          null
         }
 
+    }
+
+    /**
+     * Send an asset Either using a path payment or a normal payment, depending on the sending and receiving assets.
+     *
+     */
+    suspend fun sendAsset(recipientAccountId : String, recipientAsset: Asset, sendingAsset: Asset, amount: String, description: String): Deferred<SubmitTransactionResponse> = coroutineScope{
+
+        val tx =/*TODO: Dynamic sendMax calculation*/ /*TODO add config somewhere for network*/
+            withContext(this.coroutineContext) {
+                var txBuilder = org.stellar.sdk.Transaction.Builder(
+                    account,
+                    Network.TESTNET
+                ) /*TODO add config somewhere for network*/
+                    .addOperation(
+                        if (recipientAsset == sendingAsset) {
+                            PaymentOperation.Builder(
+                                recipientAccountId,
+                                recipientAsset.toStellarSdkAsset(),
+                                amount
+                            )
+                                .build()
+
+                        } else {
+                            /*TODO: Dynamic sendMax calculation*/
+                            PathPaymentStrictReceiveOperation.Builder(
+                                sendingAsset.toStellarSdkAsset(),
+                                "10000000",
+                                recipientAccountId,
+                                recipientAsset.toStellarSdkAsset(),
+                                amount
+                            )
+                                .build()
+                        }
+                    ).setBaseFee(200)
+                    .setTimeout(25)
+
+                if (description != "") {
+                    txBuilder = txBuilder.addMemo(Memo.text(description))
+                }
+                val tx = txBuilder.build()
+                tx.sign(keyPair)
+                tx
+            }
+        async(Dispatchers.IO){
+            server.submitTransaction(tx)
+        }
 
     }
 
