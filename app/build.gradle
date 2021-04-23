@@ -66,6 +66,7 @@ dependencies {
     implementation "androidx.camera:camera-core:${camerax_version}"
     implementation "androidx.camera:camera-camera2:${camerax_version}"
     implementation "androidx.camera:camera-lifecycle:${camerax_version}"
+    implementation "androidx.compose.animation:animation:1.0.0-beta05"
 
 //    implementation 'com.github.Gurupreet:FontAwesomeCompose:1.0.1-alpha01' causes app to crash
     implementation 'com.github.kittinunf.fuel:fuel:2.3.1'
