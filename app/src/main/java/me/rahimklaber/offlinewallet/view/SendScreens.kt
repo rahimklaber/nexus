@@ -1,4 +1,4 @@
-package me.rahimklaber.offlinewallet
+package me.rahimklaber.offlinewallet.view
 
 import android.widget.Toast
 import androidx.compose.foundation.clickable
@@ -19,6 +19,8 @@ import com.skydoves.landscapist.coil.CoilImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.rahimklaber.offlinewallet.Asset
+import me.rahimklaber.offlinewallet.Wallet
 
 /**
  * TODO: maybe only give a function for sending assets instead of the entire wallet?
@@ -119,7 +121,7 @@ fun SendByUserName(wallet: Wallet, modifier: Modifier = Modifier) {
                     scope.launch {
                         loading = true
                         val response = withContext(scope.coroutineContext) {
-                            wallet.sendAsset(
+                            wallet.sendAssetAsync(
                                 nickname,
                                 receiveAsset,
                                 sendingAsset,

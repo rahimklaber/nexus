@@ -8,6 +8,7 @@ import androidx.compose.material.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.tooling.preview.Preview
 import me.rahimklaber.offlinewallet.ui.theme.OfflineWalletTheme
+import me.rahimklaber.offlinewallet.view.MainScreen
 
 class MainActivity : AppCompatActivity() {
 

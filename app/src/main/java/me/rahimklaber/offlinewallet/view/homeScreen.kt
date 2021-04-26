@@ -15,7 +15,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusModifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -44,11 +43,11 @@ fun MainScreen() {
     val nav = rememberNavController()
 //    val wallet =  remember{Wallet(keyPair = KeyPair.fromSecretSeed(seed))}
     val scaffoldState = rememberScaffoldState(rememberDrawerState(DrawerValue.Closed))
+    var title by remember { mutableStateOf("Home") }
     Scaffold(
         scaffoldState = scaffoldState,
-//        topBar = { TopAppBar(title = { Text("Home") }) },
-        drawerContent = { },
-        bottomBar = { BottomAppBar { } }
+        topBar = { TopAppBar(title = { Text(title) }) },
+        drawerContent = { }
     ) {
         val padding = it
         NavHost(navController = nav, startDestination = "home") {
@@ -61,8 +60,9 @@ fun MainScreen() {
             composable("receive") {
                 Text("RECEIVE SHIT")
             }
-            composable("sendByUserName"){
-                SendByUserName(wallet = wallet, modifier = Modifier.padding(padding) )
+            composable("sendByUserName") {
+                title = "Send to User"
+                SendByUserName(wallet = wallet, modifier = Modifier.padding(padding))
             }
         }
 
@@ -200,15 +200,24 @@ fun SendScreen(modifier: Modifier = Modifier) {
 @Composable
 fun HomeScreen(modifier: Modifier = Modifier, nav: NavController, wallet: Wallet) {
 
-    Column(modifier = modifier) {
-        Balance(Modifier.padding(10.dp), wallet.assetsBalances)
-        SendOptionsRow(Modifier.padding(10.dp), nav)
-        RecentTransactions(
-            transactions = wallet.transactions, modifier = Modifier
-                .weight(1f)
-                .padding(10.dp), nav = nav
-        )
-        BottomRow(modifier = Modifier.padding(10.dp), nav)
+    LazyColumn(modifier = modifier) {
+        item {
+            Balance(Modifier.padding(10.dp), wallet.assetsBalances)
+
+        }
+        item {
+            SendOptionsRow(Modifier.padding(10.dp), nav)
+        }
+
+        item {
+            RecentTransactions(
+                transactions = wallet.transactions, modifier = Modifier
+                    /*.weight(1f)*/
+                    .padding(10.dp), nav = nav
+            )
+        }
+
+//        BottomRow(modifier = Modifier.padding(10.dp), nav)
     }
 
 
@@ -221,40 +230,42 @@ fun HomeScreen(modifier: Modifier = Modifier, nav: NavController, wallet: Wallet
 fun SendOptionsRow(modifier: Modifier = Modifier, nav: NavController) {
     Card(modifier = modifier.fillMaxWidth(1f)) {
 
-
-        Row(modifier = Modifier, horizontalArrangement = Arrangement.SpaceBetween) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(text = "Send", fontWeight = FontWeight(759))
-            Card(modifier.clickable {
-                nav.navigate("sendByUserName")
-            }){
+            Row(modifier = Modifier, horizontalArrangement = Arrangement.SpaceBetween) {
+                Card(modifier.clickable {
+                    nav.navigate("sendByUserName")
+                }) {
 
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = "Online qr")
-                    Icon(Icons.Default.QrCode, null, modifier.size(40.dp))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = "Online qr")
+                        Icon(Icons.Default.QrCode, null, modifier.size(40.dp))
+                    }
+                }
+                Card(modifier.clickable {
+                    nav.navigate("sendByUserName")
+                }) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = "Offline qr")
+                        Icon(Icons.Default.QrCode, "Offline qr", modifier.size(40.dp))
+
+                    }
+                }
+                Card(
+                    modifier.clickable {
+                        nav.navigate("sendByUserName")
+                    }) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = "username")
+                        Icon(Icons.Default.Face, "Offline qr", modifier.size(40.dp))
+
+                    }
                 }
             }
-            Card(modifier.clickable {
-                nav.navigate("sendByUserName")
-            }) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = "Offline qr")
-                    Icon(Icons.Default.QrCode, "Offline qr", modifier.size(40.dp))
 
-                }
-            }
-            Card (
-                modifier.clickable {
-                nav.navigate("sendByUserName")
-            }){
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = "username")
-                    Icon(Icons.Default.Face, "Offline qr", modifier.size(40 .dp))
-
-                }
-            }
+        }
         }
 
-    }
 
 }
 
@@ -274,7 +285,7 @@ fun Balance(modifier: Modifier = Modifier, balances: Map<Asset, String>) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                items(balances.toList()) {( asset,assetBalance) ->
+                items(balances.toList()) { (asset, assetBalance) ->
 //                        Image(painterResource(R.drawable.uscoin), null, modifier = Modifier.height(50.dp))
                     Card(
                         modifier = Modifier
@@ -283,7 +294,8 @@ fun Balance(modifier: Modifier = Modifier, balances: Map<Asset, String>) {
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CoilImage(
-                                imageModel = asset.iconLink ?: Icons.Default.Place /*TODO this doesnt work*/,
+                                imageModel = asset.iconLink
+                                    ?: Icons.Default.Place /*TODO this doesnt work*/,
                                 modifier = Modifier
                                     .height(50.dp)
                                     .width(50.dp),
@@ -368,49 +380,52 @@ fun RecentTransactions(
     Card(modifier = modifier) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(text = "Recent Transactions")
-            LazyColumn(
-                contentPadding = contentPadding,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
 
-                ) {
-                items(txsToUse) {
-                    Transaction(transaction = it)
-                }
+            for (tx in txsToUse) {
+                Transaction(transaction = tx,modifier = Modifier.padding(5.dp))
             }
         }
     }
-
 }
+
+
 
 /**
  * Composable representing a transaction.
  *
  * @param transaction transaction to render
- * @param onClick onclick handler, mostlikely for when there is a more info page for a transaction
+ * @param onClick onclick handler, most likely for when there is a more info page for a transaction
  */
 @Composable
-fun Transaction(transaction: Transaction, onClick: () -> Unit = {}) {
+fun Transaction(transaction: Transaction, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     Card(
-        Modifier
+        modifier
             .height(50.dp)
             .fillMaxWidth(1f),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val assetToShow = when (transaction) {
+                is Transaction.Received -> transaction.receiveAsset
+                is Transaction.Sent -> transaction.sendAsset
+            }
             CoilImage(
-                imageModel = transaction.asset.iconLink ?: "xd"/*just so this will fail*/,
+                imageModel = assetToShow.iconLink ?: "xd"/*just so this will fail*/,
                 modifier = Modifier
                     .height(50.dp)
                     .width(50.dp)
             ) {
-                Text(text = transaction.asset.name)
+                Text(text = assetToShow.name)
             }
             val received = transaction is Transaction.Received
             Spacer(modifier = Modifier.width(10.dp))
-            val color = if (received) Color.Green else Color.Red
+            val amountToShow = when (transaction) {
+                is Transaction.Sent -> transaction.sendAmount
+                is Transaction.Received -> transaction.receiveAmount
+            }
             Column {
-                Text(text = "${transaction.amount} ${transaction.asset.name}")
+                Text(text = "$amountToShow ${assetToShow.name}")
                 val text = if (received) "received" else "sent"
                 Text(fontWeight = FontWeight(10), text = text)
             }

@@ -8,25 +8,32 @@ import com.github.kittinunf.fuel.httpGet
 import com.moandjiezana.toml.Toml
 import kotlinx.coroutines.*
 import org.stellar.sdk.*
-import org.stellar.sdk.Account
 import org.stellar.sdk.requests.EventListener
 import org.stellar.sdk.responses.SubmitTransactionResponse
 import org.stellar.sdk.responses.operations.OperationResponse
+import org.stellar.sdk.responses.operations.PathPaymentStrictReceiveOperationResponse
 import org.stellar.sdk.responses.operations.PaymentOperationResponse
 import shadow.com.google.common.base.Optional
 import java.util.*
 
-class Wallet(private val keyPair : KeyPair) : ViewModel() {
+/**
+ * should probably hide the keypair
+ *
+ */
+class Wallet(val keyPair: KeyPair, nickname : String) : ViewModel() {
 
-    var transactions : List<Transaction> by mutableStateOf(listOf())
+    var transactions: List<Transaction> by mutableStateOf(listOf())
     private val server = Server("https://horizon-testnet.stellar.org")
-    var assetsBalances : Map<Asset,String>  by mutableStateOf(mapOf())
-    lateinit var account : Account
+    var assetsBalances: Map<Asset, String> by mutableStateOf(mapOf())
+    lateinit var account: org.stellar.sdk.Account
+    val user = User(nickname,keyPair.accountId)
+    val assets : List<Asset>
+        get() = assetsBalances.keys.toList()
     init {
         GlobalScope.launch(Dispatchers.IO) {
             delay(1000)
             val sequenceNumber = server.accounts().account(keyPair.accountId).sequenceNumber
-            account = org.stellar.sdk.Account(keyPair.accountId,sequenceNumber)
+            account = org.stellar.sdk.Account(keyPair.accountId, sequenceNumber)
         }
         GlobalScope.launch(Dispatchers.IO) {
             delay(1000)
@@ -41,27 +48,37 @@ class Wallet(private val keyPair : KeyPair) : ViewModel() {
      * update the balances of the wallet.
      * Todo: maybe I can do this with streaming request, the same place i stream for new txs
      */
-    fun updateBalance(){
+    fun updateBalance() {
         val assetsResponse = server
             .accounts()
             .account(keyPair.accountId)
-            .balances.map {
-                if (it.assetType=="native"){
-                    Pair(Asset.Native,it.balance)
-                }else {
-                    Pair(Asset.Custom(it.assetCode, it.assetIssuer,getAssetUrl(it.assetCode,it.assetIssuer)), it.balance)
+            .balances.flatMap {
+                if (it.assetType == "native") {
+                    listOf()
+                } else {
+                    val (imageUrl, toml) = getAssetImageUrlandToml(it.assetCode, it.assetIssuer)
+                    listOf(
+                        Pair(
+                            Asset.Custom(
+                                it.assetCode,
+                                it.assetIssuer,
+                                imageUrl,
+                                toml
+                            ), it.balance
+                        )
+                    )
                 }
             }
-            assetsResponse.map {pair ->
-                assetsBalances = assetsBalances.toMutableMap().also {
-                    it[pair.first] = pair.second
-                }
+        assetsResponse.map { pair ->
+            assetsBalances = assetsBalances.toMutableMap().also {
+                it[pair.first] = pair.second
             }
+        }
 
         println("update balance")
     }
 
-    fun addTransaction (tx : Transaction){
+    fun addTransaction(tx: Transaction) {
         transactions = transactions.toMutableList().also {
             it.add(tx)
         }
@@ -73,7 +90,7 @@ class Wallet(private val keyPair : KeyPair) : ViewModel() {
      * usefull for getting the image of the asset, since this is contained in the Asset object.
      */
     fun getAsset(code: String, issuer: String): Asset? {
-        return assetsBalances.keys.filter { it is Asset.Custom}.find {
+        return assetsBalances.keys.filter { it is Asset.Custom }.find {
             require(it is Asset.Custom)
             it.issuer == issuer && it.name == code
         }
@@ -87,60 +104,125 @@ class Wallet(private val keyPair : KeyPair) : ViewModel() {
         return server
             .accounts()
             .account(accountId)
-            .balances.map {
+            .balances.flatMap {
                 if (it.assetType == "native") {
-                    Asset.Native
+                    listOf()
                 } else {
-
-                        Asset.Custom(
-                            it.assetCode,
-                            it.assetIssuer,
-                            getAssetUrl(it.assetCode, it.assetIssuer)
-                        )
+                    val (imageUrl, toml) = getAssetImageUrlandToml(it.assetCode, it.assetIssuer)
+                    listOf(Asset.Custom(
+                        it.assetCode,
+                        it.assetIssuer,
+                        imageUrl,
+                        toml
+                    ))
                 }
             }
     }
 
-    private val listener = object : EventListener<OperationResponse>{
-        override fun onEvent(response: OperationResponse) {
-            if (response.type != "payment")
-                return
-//            println("response is payment")
-            val payment = response as PaymentOperationResponse
-            println(payment.from == keyPair.accountId)
-            if(payment.to != keyPair.accountId && payment.from != keyPair.accountId)
-                return
-            println("I am recipient")
-            val asset = when(payment.asset){
-                is AssetTypeNative -> Asset.Native
-                is AssetTypeCreditAlphaNum -> getAsset((payment.asset as AssetTypeCreditAlphaNum).code,
-                    (payment.asset as AssetTypeCreditAlphaNum).issuer)
+    /**
+     * listener which handles payments.
+     *
+     * When a payment is received, either a normal payment or a pathpayment, the payment is added
+     * to the transactionslist maintained by the wallet so it can be displayed.
+     */
+    private val listener = object : EventListener<OperationResponse> {
+
+        fun handlePayment(payment: PaymentOperationResponse): Transaction? {
+            val asset = when (payment.asset) {
+                is AssetTypeNative -> return null
+                is AssetTypeCreditAlphaNum -> getAsset(
+                    (payment.asset as AssetTypeCreditAlphaNum).code,
+                    (payment.asset as AssetTypeCreditAlphaNum).issuer
+                )
                 else -> throw Error("should never happen")
             } ?: Asset.NOT_FOUND
-            val tx  = when {
-                response.sourceAccount == keyPair.accountId -> {
+            return when {
+                payment.sourceAccount == keyPair.accountId -> {
                     Transaction.Sent(
+                        id = payment.id,
                         recipient = User(payment.to),
-                        asset = asset  ,
-                        amount =  payment.amount.toFloat(),
+                        sendAsset = asset,
+                        receiveAsset = asset,
+                        sendAmount = payment.amount.toFloat(),
+                        receiveAmount = payment.amount.toFloat(),
                         date = /*SimpleDateFormat().parse(payment.createdAt.removeSuffix("Z")) ?:*/ Date(),
                         description = payment.transaction.orNull()?.memo?.toString() ?: "No desc",
+                        pathPayment = false
                     )
                 }
-                response.to == keyPair.accountId -> {
+                payment.to == keyPair.accountId -> {
                     Transaction.Received(
+                        id = payment.id,
                         from = User(payment.from),
-                        asset = asset ?: Asset.Native,
-                        amount =  payment.amount.toFloat(),
+                        sendAsset = asset,
+                        receiveAsset = asset,
+                        sendAmount = payment.amount.toFloat(),
+                        receiveAmount = payment.amount.toFloat(),
                         date = /*SimpleDateFormat().parse(payment.createdAt.removeSuffix("Z")) ?:*/ Date(),
                         description = payment.transaction.orNull()?.memo?.toString() ?: "No desc",
+                        pathPayment = false
+
                     )
                 }
                 else -> throw Exception("Getting tx which i am not involved in")
             }
+        }
 
-            addTransaction(tx)
-            updateBalance()
+        fun handlePathPaymentStrictReceive(pathPayment: PathPaymentStrictReceiveOperationResponse): Transaction? {
+            val sourceAsset = Asset.fromSdkAsset(pathPayment.sourceAsset)
+            val sourceIsNative = if (sourceAsset !is Asset.Native) {
+                sourceAsset.iconLink = assetsBalances.keys.find { it == sourceAsset }?.iconLink
+                false
+            } else
+                true
+            val destinationAsset = Asset.fromSdkAsset(pathPayment.asset)
+            val destinationIsNative = if (destinationAsset !is Asset.Native) {
+                destinationAsset.iconLink =
+                    assetsBalances.keys.find { it == destinationAsset }?.iconLink
+                false
+            } else true
+            //Todo : make this nicer
+            return when {
+                (pathPayment.sourceAccount == keyPair.accountId && !sourceIsNative) -> Transaction.Sent(
+                    id = pathPayment.id,
+                    recipient = User(pathPayment.to),
+                    sendAsset = sourceAsset,
+                    receiveAsset = destinationAsset,
+                    sendAmount = pathPayment.sourceAmount.toFloat(),
+                    receiveAmount = pathPayment.amount.toFloat(),
+                    date = /*SimpleDateFormat().parse(payment.createdAt.removeSuffix("Z")) ?:*/ Date(),
+                    description = pathPayment.transaction.orNull()?.memo?.toString()
+                        ?: "No desc",
+                    pathPayment = true
+                )
+
+                (pathPayment.sourceAccount != keyPair.accountId && !destinationIsNative) -> Transaction.Received(
+                    id = pathPayment.id,
+                    from = User(pathPayment.from),
+                    sendAsset = sourceAsset,
+                    receiveAsset = destinationAsset,
+                    sendAmount = pathPayment.sourceAmount.toFloat(),
+                    receiveAmount = pathPayment.amount.toFloat(),
+                    date = /*SimpleDateFormat().parse(payment.createdAt.removeSuffix("Z")) ?:*/ Date(),
+                    description = pathPayment.transaction.orNull()?.memo?.toString() ?: "No desc",
+                    pathPayment = true
+                )
+                else -> null
+            }
+
+
+        }
+
+        override fun onEvent(response: OperationResponse) {
+            val tx = when (response.type) {
+                "payment" -> handlePayment(response as PaymentOperationResponse)
+                "path_payment_strict_receive" -> handlePathPaymentStrictReceive(response as PathPaymentStrictReceiveOperationResponse)
+                else -> return /*we don't support anything else.*/
+            }
+            if (tx != null) {
+                addTransaction(tx)
+                updateBalance()
+            }
         }
 
         override fun onFailure(error: Optional<Throwable>?, responseCode: Optional<Int>?) {
@@ -149,14 +231,21 @@ class Wallet(private val keyPair : KeyPair) : ViewModel() {
         }
 
     }
-    fun getAssetUrl(assetCode : String, assetIssuer: String): String?{
+
+    /**
+     * Change this to support retries
+     * Note: we assume that the asset has a toml asoociated with it
+     * Returns Pair of strings with the first one being the image url and the second one
+     * being the toml string
+     */
+    private fun getAssetImageUrlandToml(assetCode: String, assetIssuer: String): Pair<String?,String?> {
         var homedomain = server
             .accounts()
             .account(assetIssuer)
-            .homeDomain ?: return null
-        homedomain+="/.well-known/stellar.toml"
-        homedomain= "https://$homedomain"
-            print(homedomain)
+            .homeDomain ?: return Pair(null,null)
+        homedomain += "/.well-known/stellar.toml"
+        homedomain = "https://$homedomain"
+        print(homedomain)
         val (request, response, result) = homedomain.httpGet()
             .responseString()
         val (succeeded, tomlString) = when (result) {
@@ -169,13 +258,14 @@ class Wallet(private val keyPair : KeyPair) : ViewModel() {
                 Pair(true, data)
             }
         }
-        return if(succeeded){
+        return if (succeeded) {
             val toml = Toml().read(tomlString)
             val string = toml.getTables("CURRENCIES").find { it.getString("code") == assetCode }
                 ?.getString("image")
-            string
-        }else{
-         null
+            Pair(string,tomlString)
+        } else {
+            println("failed to get toml")
+            Pair(null,null)
         }
 
     }
@@ -184,7 +274,13 @@ class Wallet(private val keyPair : KeyPair) : ViewModel() {
      * Send an asset Either using a path payment or a normal payment, depending on the sending and receiving assets.
      *
      */
-    suspend fun sendAsset(recipientAccountId : String, recipientAsset: Asset, sendingAsset: Asset, amount: String, description: String): Deferred<SubmitTransactionResponse> = coroutineScope{
+    suspend fun sendAssetAsync(
+        recipientAccountId: String,
+        recipientAsset: Asset,
+        sendingAsset: Asset,
+        amount: String,
+        description: String
+    ): Deferred<SubmitTransactionResponse> = coroutineScope {
 
         val tx =/*TODO: Dynamic sendMax calculation*/ /*TODO add config somewhere for network*/
             withContext(this.coroutineContext) {
@@ -212,8 +308,8 @@ class Wallet(private val keyPair : KeyPair) : ViewModel() {
                             )
                                 .build()
                         }
-                    ).setBaseFee(200)
-                    .setTimeout(25)
+                    ).setBaseFee(500)
+                    .setTimeout(60)
 
                 if (description != "") {
                     txBuilder = txBuilder.addMemo(Memo.text(description))
@@ -222,7 +318,7 @@ class Wallet(private val keyPair : KeyPair) : ViewModel() {
                 tx.sign(keyPair)
                 tx
             }
-        async(Dispatchers.IO){
+        async(Dispatchers.IO) {
             server.submitTransaction(tx)
         }
 
