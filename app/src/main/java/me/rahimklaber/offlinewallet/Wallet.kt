@@ -4,9 +4,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import com.beust.klaxon.JsonObject
+import com.beust.klaxon.Parser
+import com.github.kittinunf.fuel.Fuel
+import com.github.kittinunf.fuel.core.extensions.jsonBody
 import com.github.kittinunf.fuel.httpGet
+import com.github.kittinunf.fuel.httpUpload
 import com.moandjiezana.toml.Toml
 import kotlinx.coroutines.*
+import me.rahimklaber.offlinewallet.db.Database
 import org.stellar.sdk.*
 import org.stellar.sdk.requests.EventListener
 import org.stellar.sdk.responses.SubmitTransactionResponse
@@ -14,21 +20,23 @@ import org.stellar.sdk.responses.operations.OperationResponse
 import org.stellar.sdk.responses.operations.PathPaymentStrictReceiveOperationResponse
 import org.stellar.sdk.responses.operations.PaymentOperationResponse
 import shadow.com.google.common.base.Optional
+import java.io.ByteArrayInputStream
 import java.util.*
 
 /**
  * should probably hide the keypair
  *
  */
-class Wallet(val keyPair: KeyPair, nickname : String) : ViewModel() {
+class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewModel() {
 
     var transactions: List<Transaction> by mutableStateOf(listOf())
     private val server = Server("https://horizon-testnet.stellar.org")
     var assetsBalances: Map<Asset, String> by mutableStateOf(mapOf())
     lateinit var account: org.stellar.sdk.Account
-    val user = User(nickname,keyPair.accountId)
-    val assets : List<Asset>
+    val user = User(nickname, keyPair.accountId)
+    val assets: List<Asset>
         get() = assetsBalances.keys.toList()
+
     init {
         GlobalScope.launch(Dispatchers.IO) {
             delay(1000)
@@ -109,12 +117,14 @@ class Wallet(val keyPair: KeyPair, nickname : String) : ViewModel() {
                     listOf()
                 } else {
                     val (imageUrl, toml) = getAssetImageUrlandToml(it.assetCode, it.assetIssuer)
-                    listOf(Asset.Custom(
-                        it.assetCode,
-                        it.assetIssuer,
-                        imageUrl,
-                        toml
-                    ))
+                    listOf(
+                        Asset.Custom(
+                            it.assetCode,
+                            it.assetIssuer,
+                            imageUrl,
+                            toml
+                        )
+                    )
                 }
             }
     }
@@ -238,11 +248,14 @@ class Wallet(val keyPair: KeyPair, nickname : String) : ViewModel() {
      * Returns Pair of strings with the first one being the image url and the second one
      * being the toml string
      */
-    private fun getAssetImageUrlandToml(assetCode: String, assetIssuer: String): Pair<String?,String?> {
+    private fun getAssetImageUrlandToml(
+        assetCode: String,
+        assetIssuer: String
+    ): Pair<String?, String?> {
         var homedomain = server
             .accounts()
             .account(assetIssuer)
-            .homeDomain ?: return Pair(null,null)
+            .homeDomain ?: return Pair(null, null)
         homedomain += "/.well-known/stellar.toml"
         homedomain = "https://$homedomain"
         print(homedomain)
@@ -262,10 +275,10 @@ class Wallet(val keyPair: KeyPair, nickname : String) : ViewModel() {
             val toml = Toml().read(tomlString)
             val string = toml.getTables("CURRENCIES").find { it.getString("code") == assetCode }
                 ?.getString("image")
-            Pair(string,tomlString)
+            Pair(string, tomlString)
         } else {
             println("failed to get toml")
-            Pair(null,null)
+            Pair(null, null)
         }
 
     }
@@ -321,6 +334,77 @@ class Wallet(val keyPair: KeyPair, nickname : String) : ViewModel() {
         async(Dispatchers.IO) {
             server.submitTransaction(tx)
         }
+
+    }
+
+    suspend fun getAuthToken(asset: Asset.Custom) : String {
+        return getAuthTokenFromDb(asset = asset) ?: getAuthTokenFromNetwork(asset = asset)
+    }
+
+    /**
+     * get the token from the db
+     */
+    suspend fun getAuthTokenFromDb(asset: Asset.Custom): String? = withContext(Dispatchers.IO) {
+        db.assetDao().getByNameAndIssuer(asset.name, asset.issuer)?.authToken
+    }
+
+    /**
+     * get auth token from anchor
+     */
+    suspend fun getAuthTokenFromNetwork(asset: Asset.Custom) : String = withContext(Dispatchers.IO) {
+        val parser = Parser.default()
+        val authServerURl = asset.toml.getString("WEB_AUTH_ENDPOINT")
+
+        val authResponseBytes =
+            authServerURl.httpGet(
+                listOf(
+                    Pair("account", account.accountId)
+                )
+            ).response().third.component1()
+
+
+        val parsedAuthResponse =
+            withContext(Dispatchers.Default) {
+                parser.parse(ByteArrayInputStream(authResponseBytes)) as JsonObject
+            }
+        val transactionXdr = parsedAuthResponse["transaction"] as String
+        val networkPassphrase = parsedAuthResponse["network_passphrase"] as String
+        val network = Network(networkPassphrase)
+        val txToSign =
+            org.stellar.sdk.Transaction.fromEnvelopeXdr(transactionXdr, network)
+        txToSign.sign(keyPair)
+        val authTokenResponseBytes =
+            Fuel.post(authServerURl).jsonBody("{\"transaction\":\"${txToSign.toEnvelopeXdrBase64()}\"}")
+                .response().third.get()
+
+        val authToken = (parser.parse(ByteArrayInputStream(authTokenResponseBytes)) as JsonObject)["token"] as String
+
+        db.assetDao().addAsset(me.rahimklaber.offlinewallet.db.Asset(asset.name,asset.issuer,authToken))
+        authToken
+    }
+
+    /**
+     * get the response from the tx server to start the deposit session
+     */
+    suspend fun getInteractiveDepositSession(asset: Asset.Custom, authToken : String): JsonObject{
+        val parser = Parser.default()
+        val transferServerUrl = asset.toml.getString("TRANSFER_SERVER_SEP0024")
+        val formData = listOf("asset_code" to asset.name, "account" to keyPair.accountId, "lang" to "en")
+
+        val sessionData =
+            withContext(Dispatchers.IO) {
+                "$transferServerUrl/transactions/deposit/interactive".httpUpload(formData)
+                    .header(
+                        "Authorization" to "Bearer $authToken"
+                    )
+                    .response().third.get()
+            }
+        /*
+        * { type,url,id}
+        * */
+        return parser.parse(ByteArrayInputStream(sessionData)) as JsonObject
+
+
 
     }
 

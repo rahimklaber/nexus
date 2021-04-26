@@ -1,4 +1,4 @@
-package me.rahimklaber.offlinewallet
+package me.rahimklaber.offlinewallet.view
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.runtime.*
@@ -25,6 +26,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigate
 import androidx.navigation.compose.rememberNavController
 import com.skydoves.landscapist.coil.CoilImage
+import kotlinx.coroutines.launch
+import me.rahimklaber.offlinewallet.*
+import me.rahimklaber.offlinewallet.R
+import me.rahimklaber.offlinewallet.ui.theme.surfaceVariant
 import org.stellar.sdk.KeyPair
 
 
@@ -33,21 +38,46 @@ val account = User("Godking")
 /**
  * The maain screen of the application.
  */
-val seed = "SDGJHP5WUXNDQLRLBOMIM2TSD2JZWYYLTSM5JI7LYWUIT6SQ7XMNLXXA"
-val pubKey = "GBZTOCTK7UQXL2B7ABYWTLZDHCKN2YVZKBKPQJ75IL4YAYJ3OGE4FEFQ"
-val wallet = Wallet(keyPair = KeyPair.fromSecretSeed(seed))
+
 
 @OptIn(ExperimentalMaterialApi::class)
 @Composable
-fun MainScreen() {
+fun MainScreen(wallet : Wallet) {
     val nav = rememberNavController()
 //    val wallet =  remember{Wallet(keyPair = KeyPair.fromSecretSeed(seed))}
     val scaffoldState = rememberScaffoldState(rememberDrawerState(DrawerValue.Closed))
     var title by remember { mutableStateOf("Home") }
+    val scope = rememberCoroutineScope()
     Scaffold(
         scaffoldState = scaffoldState,
-        topBar = { TopAppBar(title = { Text(title) }) },
-        drawerContent = { }
+        topBar = {
+            TopAppBar(title = { Text(title) }, navigationIcon = {
+                IconButton(onClick = { scope.launch { if (scaffoldState.drawerState.isOpen) scaffoldState.drawerState.close() else scaffoldState.drawerState.open() } }) {
+                    Icon(Icons.Default.Menu, null)
+                }
+            })
+        },
+        drawerContent = {
+            Button(
+                onClick = { nav.navigate("home");scope.launch { if (scaffoldState.drawerState.isOpen) scaffoldState.drawerState.close() else scaffoldState.drawerState.open() } },
+                Modifier.padding(5.dp)
+            ) {
+                Text("Home")
+            }
+            Button(
+                onClick = { nav.navigate("transactions");scope.launch { if (scaffoldState.drawerState.isOpen) scaffoldState.drawerState.close() else scaffoldState.drawerState.open() } },
+                Modifier.padding(5.dp)
+            ) {
+                Text("Transactions")
+            }
+            Button(
+                onClick = { nav.navigate("depositOrWithdraw");scope.launch { if (scaffoldState.drawerState.isOpen) scaffoldState.drawerState.close() else scaffoldState.drawerState.open() } },
+                Modifier.padding(5.dp)
+            ) {
+                Text("Deposit / Withdraw")
+            }
+
+        }
     ) {
         val padding = it
         NavHost(navController = nav, startDestination = "home") {
@@ -64,8 +94,15 @@ fun MainScreen() {
                 title = "Send to User"
                 SendByUserName(wallet = wallet, modifier = Modifier.padding(padding))
             }
+            composable("transactions") {
+                title = "Transactions"
+                TransactionsScreen(transactions = wallet.transactions)
+            }
+            composable("depositOrWithdraw") {
+                title = "Deposit or Withdraw"
+                DepositOrWithdrawScreen(wallet = wallet)
+            }
         }
-
 
     }
 
@@ -89,7 +126,6 @@ fun SelectSendScreen(modifier: Modifier = Modifier) {
                         painter = painterResource(id = R.drawable.qrcode),
                         contentDescription = null
                     )
-
                     Text(text = "Qr Code")
                 }
             }
@@ -233,18 +269,24 @@ fun SendOptionsRow(modifier: Modifier = Modifier, nav: NavController) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(text = "Send", fontWeight = FontWeight(759))
             Row(modifier = Modifier, horizontalArrangement = Arrangement.SpaceBetween) {
-                Card(modifier.clickable {
-                    nav.navigate("sendByUserName")
-                }) {
+                Card(
+                    modifier.clickable {
+                        nav.navigate("sendByUserName")
+                    },
+                    backgroundColor = MaterialTheme.colors.surfaceVariant
+                ) {
 
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(text = "Online qr")
                         Icon(Icons.Default.QrCode, null, modifier.size(40.dp))
                     }
                 }
-                Card(modifier.clickable {
-                    nav.navigate("sendByUserName")
-                }) {
+                Card(
+                    modifier.clickable {
+                        nav.navigate("sendByUserName")
+                    },
+                    backgroundColor = MaterialTheme.colors.surfaceVariant
+                ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(text = "Offline qr")
                         Icon(Icons.Default.QrCode, "Offline qr", modifier.size(40.dp))
@@ -254,7 +296,9 @@ fun SendOptionsRow(modifier: Modifier = Modifier, nav: NavController) {
                 Card(
                     modifier.clickable {
                         nav.navigate("sendByUserName")
-                    }) {
+                    },
+                    backgroundColor = MaterialTheme.colors.surfaceVariant
+                ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(text = "username")
                         Icon(Icons.Default.Face, "Offline qr", modifier.size(40.dp))
@@ -264,8 +308,7 @@ fun SendOptionsRow(modifier: Modifier = Modifier, nav: NavController) {
             }
 
         }
-        }
-
+    }
 
 }
 
@@ -290,7 +333,8 @@ fun Balance(modifier: Modifier = Modifier, balances: Map<Asset, String>) {
                     Card(
                         modifier = Modifier
                             .focusModifier()
-                            .padding(10.dp)
+                            .padding(10.dp),
+                        backgroundColor = MaterialTheme.colors.surfaceVariant
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CoilImage(
@@ -304,8 +348,10 @@ fun Balance(modifier: Modifier = Modifier, balances: Map<Asset, String>) {
                             ) {
                                 Text(text = asset.name)
                             }
-
-                            Text(text = assetBalance)
+                            val split = assetBalance.split(".")
+                            val beforeDecimal = split[0]
+                            val afterDecimal = if (split[1].length > 1) split[1].substring(0,2) else split[1]
+                            Text(text = "$beforeDecimal.$afterDecimal ${asset.name}",Modifier.padding(5.dp))
                         }
 
                     }
@@ -382,12 +428,11 @@ fun RecentTransactions(
             Text(text = "Recent Transactions")
 
             for (tx in txsToUse) {
-                Transaction(transaction = tx,modifier = Modifier.padding(5.dp))
+                Transaction(transaction = tx, modifier = Modifier.padding(5.dp))
             }
         }
     }
 }
-
 
 
 /**
@@ -402,6 +447,7 @@ fun Transaction(transaction: Transaction, modifier: Modifier = Modifier, onClick
         modifier
             .height(50.dp)
             .fillMaxWidth(1f),
+        backgroundColor = MaterialTheme.colors.surfaceVariant
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -420,10 +466,14 @@ fun Transaction(transaction: Transaction, modifier: Modifier = Modifier, onClick
             }
             val received = transaction is Transaction.Received
             Spacer(modifier = Modifier.width(10.dp))
-            val amountToShow = when (transaction) {
+            val amountSentOrReceived = when (transaction) {
                 is Transaction.Sent -> transaction.sendAmount
                 is Transaction.Received -> transaction.receiveAmount
             }
+            val split = amountSentOrReceived.toString().split(".")
+            val beforeDecimal = split[0]
+            val afterDecimal = if (split[1].length > 1) split[1].substring(0,2) else split[1]
+            val amountToShow = "$beforeDecimal.$afterDecimal"
             Column {
                 Text(text = "$amountToShow ${assetToShow.name}")
                 val text = if (received) "received" else "sent"

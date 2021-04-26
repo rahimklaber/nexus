@@ -1,5 +1,16 @@
 package me.rahimklaber.offlinewallet.view
 
+import android.content.Intent
+import android.content.IntentSender
+import android.net.Uri
+import android.view.ViewGroup
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,21 +23,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import com.beust.klaxon.JsonObject
 import com.beust.klaxon.Klaxon
-import com.beust.klaxon.Parser
-import com.github.kittinunf.fuel.httpGet
-import com.github.kittinunf.fuel.httpPost
+import com.github.kittinunf.fuel.util.decodeBase64ToString
+import com.github.kittinunf.fuel.util.encodeBase64UrlToString
 import com.skydoves.landscapist.coil.CoilImage
 import kotlinx.coroutines.*
 import me.rahimklaber.offlinewallet.Asset
 import me.rahimklaber.offlinewallet.Wallet
 import me.rahimklaber.offlinewallet.ui.theme.surfaceVariant
-import org.stellar.sdk.Network
-import java.io.ByteArrayInputStream
+import java.util.*
 
 /**
  * UI for selecting an asset to either withdraw from or deposit to.
@@ -59,9 +69,36 @@ fun DepositOrWithdrawScreen(wallet: Wallet, modifier: Modifier = Modifier) {
                 it.arguments?.get("asset") as String
             val asset =
                 parser.parse<Asset.Custom>(assetJson)
+            Deposit(wallet, asset ?: throw Exception("parsing failed"),nav)
+        }
+        composable(
+            "interactivesession/{url}",
+            arguments = listOf(navArgument("url") { type = NavType.StringType })
+        ){backentry->
+            var imageUri by remember{mutableStateOf(Uri.EMPTY)}
+            val launcher = rememberLauncherForActivityResult(contract = ActivityResultContracts.StartActivityForResult()) {
+                it as Uri
+                imageUri = it
+                println(imageUri)
+            }
+            AndroidView(factory = {
+                WebView(it).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    webChromeClient = WebChromeClientWithFileUpload(launcher)
+                    settings.javaScriptEnabled = true
+                    settings.allowFileAccess = true
+                    settings.allowContentAccess = true
+                    settings.databaseEnabled = true
+                    settings.domStorageEnabled = true
+//                    settings.setSupportMultipleWindows(true)
+                    println(backentry.arguments?.get("url"))
+                    loadUrl((backentry.arguments?.get("url") as String).decodeBase64ToString()?: throw Exception("decoding of url failed"))
+                }
 
-
-            Deposit(wallet, asset ?: throw Exception("parsing failed"))
+            })
         }
     }
 
@@ -71,10 +108,11 @@ fun DepositOrWithdrawScreen(wallet: Wallet, modifier: Modifier = Modifier) {
  * UI for depositing an asset using Sep-24
  */
 @Composable
-fun Deposit(wallet: Wallet, assetToDeposit: Asset.Custom, modifier: Modifier = Modifier) {
+fun Deposit(wallet: Wallet, assetToDeposit: Asset.Custom, nav: NavController, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     var authToken by remember { mutableStateOf("") }
-    val parser by lazy { Parser.default() }
+    var loading by remember { mutableStateOf(false) }
+    var doneLoading by remember { mutableStateOf(false) }
     Card(
         modifier = modifier
             .fillMaxWidth(1f)
@@ -92,37 +130,34 @@ fun Deposit(wallet: Wallet, assetToDeposit: Asset.Custom, modifier: Modifier = M
                 /**
                  * Todo: I should really handle errors.
                  */
-                val authServerURl = assetToDeposit.toml.getString("AUTH_SERVER")
                 scope.launch {
-                    val authResponseBytes = withContext(Dispatchers.IO) {
-                        authServerURl.httpGet(
-                            listOf(
-                                Pair("account", wallet.account.accountId)
-                            )
-                        ).response().third.component1()
-                    }
-
-                    val parsedAuthResponse =
-                        withContext(Dispatchers.Default) {
-
-                            parser.parse(ByteArrayInputStream(authResponseBytes)) as JsonObject
-                        }
-                    val transactionXdr = parsedAuthResponse["transaction"] as String
-                    val networkPassphrase = parsedAuthResponse["network_passphrase"] as String
-                    val network = Network(networkPassphrase)
-                    val txToSign =
-                        org.stellar.sdk.Transaction.fromEnvelopeXdr(transactionXdr,network)
-                    txToSign.sign(wallet.keyPair)
-                    val authTokenResponseBytes = withContext(Dispatchers.IO){
-                        authServerURl.httpPost(listOf(Pair("",txToSign.toEnvelopeXdrBase64())))
-                            .response().third.get()
-                    }
-                    authToken = (parser.parse(ByteArrayInputStream(authTokenResponseBytes)) as JsonObject)["token"] as String
-
-
-
+                    loading = true
+                    authToken = wallet.getAuthToken(asset = assetToDeposit)
+                    loading = false
+                    doneLoading = true
+                }
             }) {
                 Text(text = "Start deposit process")
+            }
+            if (loading) {
+                CircularProgressIndicator(Modifier.padding(5.dp))
+            }
+            var interactiveRequestDone by remember { mutableStateOf(false) }
+            var interactiveDepositResponse by remember { mutableStateOf(JsonObject()) }
+            if (doneLoading) {
+                scope.launch {
+                    interactiveDepositResponse =
+                        wallet.getInteractiveDepositSession(assetToDeposit, authToken)
+                    interactiveRequestDone = true
+                }
+                if (interactiveRequestDone) {
+                    val url = interactiveDepositResponse["url"] as String
+                    val base64EncodedUrl = url.encodeBase64UrlToString()
+                    println(url)
+                    // for some reason passing in the full url doesn't work, it seems to stop at "?"
+                    // so base64 encode it is
+                    nav.navigate("interactivesession/$base64EncodedUrl")
+                }
             }
         }
     }
@@ -171,3 +206,18 @@ fun Asset(asset: Asset, nav: NavController, modifier: Modifier = Modifier) {
     }
 }
 
+class WebChromeClientWithFileUpload(val launcher: ActivityResultLauncher<Intent>) : WebChromeClient(){
+    override fun onShowFileChooser(
+        webView: WebView,
+        filePathCallback: ValueCallback<Array<Uri>>,
+        fileChooserParams: FileChooserParams
+    ): Boolean {
+        try {
+            val intent = fileChooserParams.createIntent()
+            launcher.launch(intent)
+        }catch (e:java.lang.Exception){
+            println(e)
+        }
+        return true
+    }
+}
