@@ -37,7 +37,15 @@ import me.rahimklaber.offlinewallet.Asset
 import me.rahimklaber.offlinewallet.Wallet
 import me.rahimklaber.offlinewallet.ui.theme.surfaceVariant
 import java.util.*
-
+/**
+ * only for use with webview
+ */
+object Callback {
+    var callback : (Array<Uri>) -> Unit = {}
+    operator fun invoke(uris : Array<Uri>){
+        callback(uris)
+    }
+}
 /**
  * UI for selecting an asset to either withdraw from or deposit to.
  */
@@ -76,10 +84,13 @@ fun DepositOrWithdrawScreen(wallet: Wallet, modifier: Modifier = Modifier) {
             arguments = listOf(navArgument("url") { type = NavType.StringType })
         ){backentry->
             var imageUri by remember{mutableStateOf(Uri.EMPTY)}
+
             val launcher = rememberLauncherForActivityResult(contract = ActivityResultContracts.StartActivityForResult()) {
-                it as Uri
-                imageUri = it
-                println(imageUri)
+                Callback(arrayOf(it.data?.data?: Uri.EMPTY))
+                println("got it ${it.data?.data}")
+            //                it as Uri
+//                imageUri = it
+//                println(imageUri)
             }
             AndroidView(factory = {
                 WebView(it).apply {
@@ -87,7 +98,7 @@ fun DepositOrWithdrawScreen(wallet: Wallet, modifier: Modifier = Modifier) {
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    webChromeClient = WebChromeClientWithFileUpload(launcher)
+                    webChromeClient = WebChromeClientWithFileUpload(launcher,Callback)
                     settings.javaScriptEnabled = true
                     settings.allowFileAccess = true
                     settings.allowContentAccess = true
@@ -205,14 +216,14 @@ fun Asset(asset: Asset, nav: NavController, modifier: Modifier = Modifier) {
 
     }
 }
-
-class WebChromeClientWithFileUpload(val launcher: ActivityResultLauncher<Intent>) : WebChromeClient(){
+class WebChromeClientWithFileUpload(val launcher : ActivityResultLauncher<Intent>,val callback : Callback) : WebChromeClient(){
     override fun onShowFileChooser(
         webView: WebView,
         filePathCallback: ValueCallback<Array<Uri>>,
         fileChooserParams: FileChooserParams
     ): Boolean {
         try {
+            callback.callback = {filePathCallback.onReceiveValue(it)}
             val intent = fileChooserParams.createIntent()
             launcher.launch(intent)
         }catch (e:java.lang.Exception){
