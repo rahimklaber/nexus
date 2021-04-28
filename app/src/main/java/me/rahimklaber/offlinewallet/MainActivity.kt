@@ -25,8 +25,8 @@ class MainActivity : AppCompatActivity() {
                 val pubKey = "GBZTOCTK7UQXL2B7ABYWTLZDHCKN2YVZKBKPQJ75IL4YAYJ3OGE4FEFQ"
                 val db = Room.databaseBuilder(
                     applicationContext,
-                    me.rahimklaber.offlinewallet.db.Database::class.java,"nexus_db"
-                ).build()
+                    me.rahimklaber.offlinewallet.db.Database::class.java,"nexus_db",
+                ).fallbackToDestructiveMigration().build()
                 val wallet = Wallet(keyPair = KeyPair.fromSecretSeed(seed),db,"coolman")
                 Surface(color = MaterialTheme.colors.background) {
                    MainScreen(wallet = wallet)

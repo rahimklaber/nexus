@@ -1,7 +1,7 @@
 package me.rahimklaber.offlinewallet.view
 
+import android.app.Activity.RESULT_OK
 import android.content.Intent
-import android.content.IntentSender
 import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.ValueCallback
@@ -9,7 +9,6 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -37,15 +36,17 @@ import me.rahimklaber.offlinewallet.Asset
 import me.rahimklaber.offlinewallet.Wallet
 import me.rahimklaber.offlinewallet.ui.theme.surfaceVariant
 import java.util.*
+
 /**
  * only for use with webview
  */
 object Callback {
-    var callback : (Array<Uri>) -> Unit = {}
-    operator fun invoke(uris : Array<Uri>){
+    var callback: (Array<Uri>?) -> Unit = {}
+    operator fun invoke(uris: Array<Uri>?) {
         callback(uris)
     }
 }
+
 /**
  * UI for selecting an asset to either withdraw from or deposit to.
  */
@@ -55,16 +56,30 @@ fun DepositOrWithdrawScreen(wallet: Wallet, modifier: Modifier = Modifier) {
     val parser = remember { Klaxon() }
     val assets = wallet.assets
     val scope = rememberCoroutineScope()
+
     NavHost(navController = nav, startDestination = "depositOrWithdraw") {
         composable("depositOrWithdraw") {
-            Card(modifier = modifier.padding(10.dp)) {
-                LazyColumn(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    contentPadding = PaddingValues(10.dp)
-                ) {
-                    items(assets) {
-                        Asset(asset = it, nav, modifier.padding(5.dp))
+            var navigatingToDepositOrWithdraw by remember { mutableStateOf(false) }
+
+            if (!navigatingToDepositOrWithdraw) {
+                Card(modifier = modifier.padding(10.dp)) {
+                    LazyColumn(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        contentPadding = PaddingValues(10.dp)
+                    ) {
+                        items(assets) {
+                            Asset(
+                                asset = it,
+                                nav,
+                                modifier.padding(5.dp),
+                                { navigatingToDepositOrWithdraw = true },
+                                { navigatingToDepositOrWithdraw = false })
+                        }
                     }
+                }
+            } else {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.padding(10.dp))
                 }
             }
         }
@@ -72,33 +87,53 @@ fun DepositOrWithdrawScreen(wallet: Wallet, modifier: Modifier = Modifier) {
             "deposit/{asset}",
             arguments = listOf(navArgument("asset") { type = NavType.StringType })
         ) {
-
+            var loading by remember { mutableStateOf(true) }
             val assetJson =
                 it.arguments?.get("asset") as String
-            val asset =
-                parser.parse<Asset.Custom>(assetJson)
-            Deposit(wallet, asset ?: throw Exception("parsing failed"),nav)
+            var asset by remember { mutableStateOf<Asset.Custom?>(null) }
+            LaunchedEffect(true) {
+                loading = true
+
+                asset =
+                    withContext(Dispatchers.Default) {
+                        parser.parse<Asset.Custom>(assetJson)
+                    }
+                loading = false
+            }
+            if (loading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.padding(10.dp))
+                }
+
+            } else {
+                Deposit(wallet, asset ?: throw Exception("parsing failed"), nav)
+            }
+
         }
         composable(
             "interactivesession/{url}",
             arguments = listOf(navArgument("url") { type = NavType.StringType })
-        ){backentry->
-            var imageUri by remember{mutableStateOf(Uri.EMPTY)}
+        ) { backentry ->
+            var imageUri by remember { mutableStateOf(Uri.EMPTY) }
 
-            val launcher = rememberLauncherForActivityResult(contract = ActivityResultContracts.StartActivityForResult()) {
-                Callback(arrayOf(it.data?.data?: Uri.EMPTY))
-                println("got it ${it.data?.data}")
-            //                it as Uri
+            val launcher =
+                rememberLauncherForActivityResult(contract = ActivityResultContracts.StartActivityForResult()) {
+                    if (it.resultCode != RESULT_OK) {
+                        Callback(arrayOf(it.data?.data ?: Uri.EMPTY))
+                    } else {
+                        Callback(null)
+                    }
+                    //                it as Uri
 //                imageUri = it
 //                println(imageUri)
-            }
+                }
             AndroidView(factory = {
                 WebView(it).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    webChromeClient = WebChromeClientWithFileUpload(launcher,Callback)
+                    webChromeClient = WebChromeClientWithFileUpload(launcher, Callback)
                     settings.javaScriptEnabled = true
                     settings.allowFileAccess = true
                     settings.allowContentAccess = true
@@ -106,7 +141,10 @@ fun DepositOrWithdrawScreen(wallet: Wallet, modifier: Modifier = Modifier) {
                     settings.domStorageEnabled = true
 //                    settings.setSupportMultipleWindows(true)
                     println(backentry.arguments?.get("url"))
-                    loadUrl((backentry.arguments?.get("url") as String).decodeBase64ToString()?: throw Exception("decoding of url failed"))
+                    loadUrl(
+                        (backentry.arguments?.get("url") as String).decodeBase64ToString()
+                            ?: throw Exception("decoding of url failed")
+                    )
                 }
 
             })
@@ -119,7 +157,12 @@ fun DepositOrWithdrawScreen(wallet: Wallet, modifier: Modifier = Modifier) {
  * UI for depositing an asset using Sep-24
  */
 @Composable
-fun Deposit(wallet: Wallet, assetToDeposit: Asset.Custom, nav: NavController, modifier: Modifier = Modifier) {
+fun Deposit(
+    wallet: Wallet,
+    assetToDeposit: Asset.Custom,
+    nav: NavController,
+    modifier: Modifier = Modifier
+) {
     val scope = rememberCoroutineScope()
     var authToken by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -156,10 +199,22 @@ fun Deposit(wallet: Wallet, assetToDeposit: Asset.Custom, nav: NavController, mo
             var interactiveRequestDone by remember { mutableStateOf(false) }
             var interactiveDepositResponse by remember { mutableStateOf(JsonObject()) }
             if (doneLoading) {
-                scope.launch {
+                scope.launch(Dispatchers.Default) {
                     interactiveDepositResponse =
                         wallet.getInteractiveDepositSession(assetToDeposit, authToken)
                     interactiveRequestDone = true
+                    launch(Dispatchers.IO) {
+                        val asset = wallet.db.assetDao()
+                            .getByNameAndIssuer(assetToDeposit.name, assetToDeposit.issuer)
+                        val assetId = asset?.id ?: -1
+                        println("asset id $assetId")
+                        wallet.db.depositDao().addDeposit(
+                            me.rahimklaber.offlinewallet.db.Deposit(
+                                id = interactiveDepositResponse["id"] as String,
+                                depositAssetId = assetId
+                            )
+                        )
+                    }
                 }
                 if (interactiveRequestDone) {
                     val url = interactiveDepositResponse["url"] as String
@@ -174,9 +229,21 @@ fun Deposit(wallet: Wallet, assetToDeposit: Asset.Custom, nav: NavController, mo
     }
 }
 
-
+/**
+ * Element with represents the deposit or withdraw possibility for an Asset
+ * @param onNavigateBegin called when navigating to either a deposit or withdraw screen
+ * @param onNavigateEnd called when done with navigationg
+ *
+ * [onNavigateBegin] and [onNavigateEnd] are used to add a loading animation.
+ */
 @Composable
-fun Asset(asset: Asset, nav: NavController, modifier: Modifier = Modifier) {
+fun Asset(
+    asset: Asset,
+    nav: NavController,
+    modifier: Modifier = Modifier,
+    onNavigateBegin: () -> Unit = {},
+    onNavigateEnd: () -> Unit = {}
+) {
     val klaxon = Klaxon()
     val scope = rememberCoroutineScope()
     Card(
@@ -201,9 +268,14 @@ fun Asset(asset: Asset, nav: NavController, modifier: Modifier = Modifier) {
             }
             Row(modifier.padding(5.dp)) {
                 Button(onClick = {
-                    scope.launch {
+                    // Todo: the loading circle doesn't start right away, Probably has to do with calling onNavigateBegin in a coroutine
+                    scope.launch(Dispatchers.Default) {
                         val assetJson = klaxon.toJsonString(asset)
-                        nav.navigate("deposit/$assetJson")
+                        onNavigateBegin()
+                        withContext(Dispatchers.Main) {
+                            nav.navigate("deposit/$assetJson")
+                        }
+                        onNavigateEnd()
                     }
                 }, Modifier.padding(5.dp)) {
                     Text("deposit")
@@ -214,19 +286,24 @@ fun Asset(asset: Asset, nav: NavController, modifier: Modifier = Modifier) {
             }
         }
 
+
     }
 }
-class WebChromeClientWithFileUpload(val launcher : ActivityResultLauncher<Intent>,val callback : Callback) : WebChromeClient(){
+
+class WebChromeClientWithFileUpload(
+    val launcher: ActivityResultLauncher<Intent>,
+    val callback: Callback
+) : WebChromeClient() {
     override fun onShowFileChooser(
         webView: WebView,
         filePathCallback: ValueCallback<Array<Uri>>,
         fileChooserParams: FileChooserParams
     ): Boolean {
         try {
-            callback.callback = {filePathCallback.onReceiveValue(it)}
+            callback.callback = { filePathCallback.onReceiveValue(it) }
             val intent = fileChooserParams.createIntent()
             launcher.launch(intent)
-        }catch (e:java.lang.Exception){
+        } catch (e: java.lang.Exception) {
             println(e)
         }
         return true

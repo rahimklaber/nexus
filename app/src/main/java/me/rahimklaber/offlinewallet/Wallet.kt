@@ -13,6 +13,7 @@ import com.github.kittinunf.fuel.httpUpload
 import com.moandjiezana.toml.Toml
 import kotlinx.coroutines.*
 import me.rahimklaber.offlinewallet.db.Database
+import me.rahimklaber.offlinewallet.db.Deposit
 import org.stellar.sdk.*
 import org.stellar.sdk.requests.EventListener
 import org.stellar.sdk.responses.SubmitTransactionResponse
@@ -31,11 +32,19 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
 
     var transactions: List<Transaction> by mutableStateOf(listOf())
     private val server = Server("https://horizon-testnet.stellar.org")
-    var assetsBalances: Map<Asset, String> by mutableStateOf(mapOf())
+    var assetsBalances: Map<Asset.Custom, String> by mutableStateOf(mapOf())
     lateinit var account: org.stellar.sdk.Account
     val user = User(nickname, keyPair.accountId)
-    val assets: List<Asset>
+    val assets: List<Asset.Custom>
         get() = assetsBalances.keys.toList()
+    private val jsonParser = Parser.default()
+
+
+    fun getAssetByNameAndIssuer(name: String, issuer: String): Asset.Custom? {
+        return assets.find {
+            it.name == name && it.issuer == issuer
+        }
+    }
 
     init {
         GlobalScope.launch(Dispatchers.IO) {
@@ -337,7 +346,7 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
 
     }
 
-    suspend fun getAuthToken(asset: Asset.Custom) : String {
+    suspend fun getAuthToken(asset: Asset.Custom): String {
         return getAuthTokenFromDb(asset = asset) ?: getAuthTokenFromNetwork(asset = asset)
     }
 
@@ -351,7 +360,7 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
     /**
      * get auth token from anchor
      */
-    suspend fun getAuthTokenFromNetwork(asset: Asset.Custom) : String = withContext(Dispatchers.IO) {
+    suspend fun getAuthTokenFromNetwork(asset: Asset.Custom): String = withContext(Dispatchers.IO) {
         val parser = Parser.default()
         val authServerURl = asset.toml.getString("WEB_AUTH_ENDPOINT")
 
@@ -374,22 +383,31 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
             org.stellar.sdk.Transaction.fromEnvelopeXdr(transactionXdr, network)
         txToSign.sign(keyPair)
         val authTokenResponseBytes =
-            Fuel.post(authServerURl).jsonBody("{\"transaction\":\"${txToSign.toEnvelopeXdrBase64()}\"}")
+            Fuel.post(authServerURl)
+                .jsonBody("{\"transaction\":\"${txToSign.toEnvelopeXdrBase64()}\"}")
                 .response().third.get()
 
-        val authToken = (parser.parse(ByteArrayInputStream(authTokenResponseBytes)) as JsonObject)["token"] as String
+        val authToken =
+            (parser.parse(ByteArrayInputStream(authTokenResponseBytes)) as JsonObject)["token"] as String
 
-        db.assetDao().addAsset(me.rahimklaber.offlinewallet.db.Asset(asset.name,asset.issuer,authToken))
+        db.assetDao().addAsset(
+            me.rahimklaber.offlinewallet.db.Asset(
+                asset.name,
+                asset.issuer,
+                authToken,
+                asset.iconLink as String
+            )
+        )
         authToken
     }
 
     /**
      * get the response from the tx server to start the deposit session
      */
-    suspend fun getInteractiveDepositSession(asset: Asset.Custom, authToken : String): JsonObject{
-        val parser = Parser.default()
+    suspend fun getInteractiveDepositSession(asset: Asset.Custom, authToken: String): JsonObject {
         val transferServerUrl = asset.toml.getString("TRANSFER_SERVER_SEP0024")
-        val formData = listOf("asset_code" to asset.name, "account" to keyPair.accountId, "lang" to "en")
+        val formData =
+            listOf("asset_code" to asset.name, "account" to keyPair.accountId, "lang" to "en")
 
         val sessionData =
             withContext(Dispatchers.IO) {
@@ -402,8 +420,49 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
         /*
         * { type,url,id}
         * */
-        return parser.parse(ByteArrayInputStream(sessionData)) as JsonObject
+        return jsonParser.parse(ByteArrayInputStream(sessionData)) as JsonObject
 
+
+    }
+
+    /**
+     * check on how a deposit or withdrawal is going.
+     *
+     * fetches the information from the anchor and updates the database.
+     */
+    suspend fun checkOnAnchorTransaction(
+        id: String,
+        dbAsset: me.rahimklaber.offlinewallet.db.Asset
+    ): Deposit? {
+        val asset = getAssetByNameAndIssuer(dbAsset.name, dbAsset.issuer) ?: return null
+        val transferServerUrl = asset.toml.getString("TRANSFER_SERVER_SEP0024")
+        return withContext(Dispatchers.IO){
+            val response = "$transferServerUrl/transaction".httpGet(
+                listOf(
+                    "id" to id
+                )
+            )
+                .header(
+                    "Authorization" to "Bearer ${dbAsset.authToken}"
+                ).response().third.component1() ?: return@withContext null
+            val transactionJson =
+                (jsonParser.parse(ByteArrayInputStream(response)) as JsonObject)["transaction"] as JsonObject
+
+            val deposit = Deposit(
+                id = id,
+                status = transactionJson["status"] as String, /*Todo make the status user readable*/
+                statusEta = (transactionJson["status_eta"] as Int?)?.toLong(),
+                externalTransactionId = transactionJson["external_transaction_url"] as String?,
+                MoreInfoUrl = transactionJson["more_info_url"] as String,
+                amountIn = transactionJson["amount_in"] as String?,
+                amountOut = transactionJson["amount_out"] as String?,
+                amountFee = transactionJson["amount_fee"] as String?,
+                //Todo figure out how to parse Dates
+                depositAssetId = dbAsset.id
+            )
+            db.depositDao().addDeposit(deposit = deposit)
+            deposit
+        }
 
 
     }

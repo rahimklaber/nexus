@@ -50,6 +50,7 @@ fun MainScreen(wallet : Wallet) {
     val scope = rememberCoroutineScope()
     Scaffold(
         scaffoldState = scaffoldState,
+        drawerGesturesEnabled = false,
         topBar = {
             TopAppBar(title = { Text(title) }, navigationIcon = {
                 IconButton(onClick = { scope.launch { if (scaffoldState.drawerState.isOpen) scaffoldState.drawerState.close() else scaffoldState.drawerState.open() } }) {
@@ -76,12 +77,19 @@ fun MainScreen(wallet : Wallet) {
             ) {
                 Text("Deposit / Withdraw")
             }
+            Button(
+                onClick = { nav.navigate("depositsOrWithdrawalStatus");scope.launch { if (scaffoldState.drawerState.isOpen) scaffoldState.drawerState.close() else scaffoldState.drawerState.open() } },
+                Modifier.padding(5.dp)
+            ) {
+                Text("Deposits / withdrawals status")
+            }
 
         }
     ) {
         val padding = it
         NavHost(navController = nav, startDestination = "home") {
             composable("home") {
+                title = "home"
                 HomeScreen(nav = nav, wallet = wallet, modifier = Modifier.padding(padding))
             }
             composable("send") {
@@ -101,6 +109,10 @@ fun MainScreen(wallet : Wallet) {
             composable("depositOrWithdraw") {
                 title = "Deposit or Withdraw"
                 DepositOrWithdrawScreen(wallet = wallet)
+            }
+            composable("depositsOrWithdrawalStatus") {
+                title = "Check Deposits/Withdrawals status"
+                CheckDepositsWithdrawalScreen(wallet = wallet)
             }
         }
 
@@ -318,7 +330,7 @@ fun SendOptionsRow(modifier: Modifier = Modifier, nav: NavController) {
  * @param modifier Modifier to pass.
  */
 @Composable
-fun Balance(modifier: Modifier = Modifier, balances: Map<Asset, String>) {
+fun Balance(modifier: Modifier = Modifier, balances: Map<Asset.Custom, String>) {
 
     Card(modifier = modifier.fillMaxWidth(1f)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
