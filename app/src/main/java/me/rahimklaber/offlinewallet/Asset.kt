@@ -38,7 +38,7 @@ sealed class Asset {
         override val name: String,
         val issuer: String,
         override var iconLink: Any? = null,
-        override val tomlString: String?
+        override val tomlString: String? = null
     ) : Asset() {
         // Doing this to make serialization easier.
         @Json(ignored=true)
