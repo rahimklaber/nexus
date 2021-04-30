@@ -10,22 +10,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.skydoves.landscapist.coil.CoilImage
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rahimklaber.offlinewallet.Wallet
-import me.rahimklaber.offlinewallet.db.DepositWithAsset
+import me.rahimklaber.offlinewallet.db.AnchorTransactionWithAsset
 import me.rahimklaber.offlinewallet.ui.theme.surfaceVariant
 
 @Composable
 fun CheckDepositsWithdrawalScreen(wallet: Wallet, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
-    var transactions by remember { mutableStateOf(listOf<DepositWithAsset>()) }
+    var transactions by remember { mutableStateOf(listOf<AnchorTransactionWithAsset>()) }
     var loading by remember { mutableStateOf(true) }
-    LaunchedEffect(true) {
+    LaunchedEffect(wallet.assetsBalances) {
         loading = true
         transactions = withContext(Dispatchers.IO) {
-            wallet.db.depositDao().getDepositsWithAsset()
+            wallet.db.anchorTransactionDao().getTransactionsWithAsset()
         }
         println("loading done")
         loading = false
@@ -62,8 +61,8 @@ fun CheckDepositsWithdrawalScreen(wallet: Wallet, modifier: Modifier = Modifier)
 }
 
 @Composable
-fun DepositStatus(depositParam: DepositWithAsset, wallet: Wallet, modifier: Modifier = Modifier) {
-    var deposit by remember { mutableStateOf(depositParam.deposit) }
+fun DepositStatus(depositParam: AnchorTransactionWithAsset, wallet: Wallet, modifier: Modifier = Modifier) {
+    var deposit by remember { mutableStateOf(depositParam.anchorTransaction) }
     val asset = depositParam.asset
     var reloading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()

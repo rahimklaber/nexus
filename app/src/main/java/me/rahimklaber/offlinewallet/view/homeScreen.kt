@@ -107,7 +107,7 @@ fun MainScreen(wallet : Wallet) {
                 TransactionsScreen(transactions = wallet.transactions)
             }
             composable("depositOrWithdraw") {
-                title = "Deposit or Withdraw"
+                title = "deposit or Withdraw"
                 DepositOrWithdrawScreen(wallet = wallet)
             }
             composable("depositsOrWithdrawalStatus") {

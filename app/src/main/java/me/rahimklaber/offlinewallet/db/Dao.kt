@@ -4,7 +4,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy.REPLACE
 import androidx.room.Query
-import androidx.room.Transaction
 
 @Dao
 interface AssetDao {
@@ -26,17 +25,20 @@ interface UserDao {
     fun getByPublicKey(publicKey: String): User?
 }
 
+/**
+ * Table for withdrawals and deposits at an anchor
+ */
 @Dao
-interface DepositDao {
+interface AnchorTransactionDao {
     @Insert(onConflict = REPLACE)
-    fun addDeposit(deposit: Deposit)
+    fun addTransaction(anchorTransaction: AnchorTransaction)
 
-    @Query("select * from deposit where deposit_id = :id")
-    fun getById(id: String): Deposit?
+    @Query("select * from anchorTransaction where transaction_id = :id")
+    fun getById(id: String): AnchorTransaction?
 
-    @Query("select * from deposit")
-    fun getAll(): List<Deposit>
+    @Query("select * from anchorTransaction")
+    fun getAll(): List<AnchorTransaction>
 
-    @Query("select * from deposit join asset on deposit.deposit_asset_id=asset.asset_id")
-    fun getDepositsWithAsset(): List<DepositWithAsset>
+    @Query("select * from anchorTransaction join asset on anchorTransaction.transaction_asset_id=asset.asset_id")
+    fun getTransactionsWithAsset(): List<AnchorTransactionWithAsset>
 }

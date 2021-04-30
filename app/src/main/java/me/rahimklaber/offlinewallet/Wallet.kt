@@ -16,7 +16,7 @@ import com.moandjiezana.toml.Toml
 import io.jsonwebtoken.*
 import kotlinx.coroutines.*
 import me.rahimklaber.offlinewallet.db.Database
-import me.rahimklaber.offlinewallet.db.Deposit
+import me.rahimklaber.offlinewallet.db.AnchorTransaction
 import org.stellar.sdk.*
 import org.stellar.sdk.requests.EventListener
 import org.stellar.sdk.responses.SubmitTransactionResponse
@@ -25,7 +25,6 @@ import org.stellar.sdk.responses.operations.PathPaymentStrictReceiveOperationRes
 import org.stellar.sdk.responses.operations.PaymentOperationResponse
 import shadow.com.google.common.base.Optional
 import java.io.ByteArrayInputStream
-import java.time.Instant.now
 import java.util.*
 
 /**
@@ -419,14 +418,14 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
                 authToken,
                 asset.iconLink as String
             ).also {
-                it.id = db.assetDao().getByNameAndIssuer(asset.name,asset.issuer)?.id ?: -1//Todo do this better
+                it.id = db.assetDao().getByNameAndIssuer(asset.name,asset.issuer)?.id ?:0//Todo do this better
             }
         )
         authToken
     }
 
     /**
-     * get the response from the tx server to start the deposit session
+     * get the response from the tx server to start the anchorTransaction session
      */
     suspend fun getInteractiveDepositSession(asset: Asset.Custom, authToken: String): JsonObject {
         val transferServerUrl = asset.toml.getString("TRANSFER_SERVER_SEP0024")
@@ -449,15 +448,36 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
 
     }
 
+    suspend fun getInteractiveWithdrawSession(asset: Asset.Custom, authToken: String): JsonObject {
+        val transferServerUrl = asset.toml.getString("TRANSFER_SERVER_SEP0024")
+        val formData =
+            listOf("asset_code" to asset.name, "account" to keyPair.accountId, "lang" to "en")
+
+        val sessionData =
+            withContext(Dispatchers.IO) {
+                "$transferServerUrl/transactions/withdraw/interactive".httpUpload(formData)
+                    .header(
+                        "Authorization" to "Bearer $authToken"
+                    )
+                    .response().third.get()
+            }
+        /*
+        * { type,url,id}
+        * */
+        return jsonParser.parse(ByteArrayInputStream(sessionData)) as JsonObject
+
+
+    }
+
     /**
-     * check on how a deposit or withdrawal is going.
+     * check on how a anchorTransaction or withdrawal is going.
      *
      * fetches the information from the anchor and updates the database.
      */
     suspend fun checkOnAnchorTransaction(
         id: String,
         dbAsset: me.rahimklaber.offlinewallet.db.Asset
-    ): Deposit? {
+    ): AnchorTransaction? {
         val asset = getAssetByNameAndIssuer(dbAsset.name, dbAsset.issuer) ?: return null
         val transferServerUrl = asset.toml.getString("TRANSFER_SERVER_SEP0024")
         return withContext(Dispatchers.IO){
@@ -474,23 +494,50 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
             val transactionJson =
                 (jsonParser.parse(ByteArrayInputStream(response)) as JsonObject)["transaction"] as JsonObject
 
-            val deposit = Deposit(
+            val transaction = AnchorTransaction(
                 id = id,
+                kind = transactionJson["kind"] as String,
                 status = transactionJson["status"] as String, /*Todo make the status user readable*/
                 statusEta = (transactionJson["status_eta"] as Int?)?.toLong(),
-                externalTransactionId = transactionJson["external_transaction_url"] as String?,
-                MoreInfoUrl = transactionJson["more_info_url"] as String,
                 amountIn = transactionJson["amount_in"] as String?,
                 amountOut = transactionJson["amount_out"] as String?,
                 amountFee = transactionJson["amount_fee"] as String?,
+                externalTransactionId = transactionJson["external_transaction_url"] as String?,
+                MoreInfoUrl = transactionJson["more_info_url"] as String,
                 //Todo figure out how to parse Dates
-                depositAssetId = dbAsset.id
+                TransactionAssetId = dbAsset.id
             )
-            db.depositDao().addDeposit(deposit = deposit)
-            deposit
+            db.anchorTransactionDao().addTransaction(anchorTransaction = transaction)
+            transaction
         }
 
 
+    }
+
+    /**
+     * send the specified amount of asset to the anchor address.
+     * this used to pay the anchor to withdraw your funds.
+     * This is done using a `payment` operation and not `path-payment`.
+     */
+    suspend fun payAnchorAsync(recipient : String,amount : String, memo : String,asset: Asset.Custom) : Deferred<SubmitTransactionResponse> = coroutineScope{
+
+        val txDeferred = async(Dispatchers.Default) {
+            val innterTx =
+            org.stellar.sdk.Transaction.Builder(account, Network.TESTNET)
+                .addOperation(
+                    PaymentOperation.Builder(recipient, asset.toStellarSdkAsset(), amount)
+                        .build()
+                )
+                .setTimeout(60)
+                .setBaseFee(500)
+                .addMemo(Memo.hash(memo))
+                .build()
+            innterTx.sign(keyPair)
+            innterTx
+        }
+        async(Dispatchers.IO) {
+            server.submitTransaction(txDeferred.await())
+        }
     }
 
 }

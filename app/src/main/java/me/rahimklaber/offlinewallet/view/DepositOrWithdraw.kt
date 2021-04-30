@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavController
@@ -28,6 +30,8 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import com.beust.klaxon.JsonObject
 import com.beust.klaxon.Klaxon
+import com.beust.klaxon.Parser
+import com.github.kittinunf.fuel.httpGet
 import com.github.kittinunf.fuel.util.decodeBase64ToString
 import com.github.kittinunf.fuel.util.encodeBase64UrlToString
 import com.skydoves.landscapist.coil.CoilImage
@@ -35,6 +39,7 @@ import kotlinx.coroutines.*
 import me.rahimklaber.offlinewallet.Asset
 import me.rahimklaber.offlinewallet.Wallet
 import me.rahimklaber.offlinewallet.ui.theme.surfaceVariant
+import java.io.ByteArrayInputStream
 import java.util.*
 
 /**
@@ -48,7 +53,7 @@ object Callback {
 }
 
 /**
- * UI for selecting an asset to either withdraw from or deposit to.
+ * UI for selecting an asset to either withdraw from or anchorTransaction to.
  */
 @Composable
 fun DepositOrWithdrawScreen(wallet: Wallet, modifier: Modifier = Modifier) {
@@ -107,6 +112,33 @@ fun DepositOrWithdrawScreen(wallet: Wallet, modifier: Modifier = Modifier) {
 
             } else {
                 Deposit(wallet, asset ?: throw Exception("parsing failed"), nav)
+            }
+
+        }
+        composable(
+            "withdraw/{asset}",
+            arguments = listOf(navArgument("asset") { type = NavType.StringType })
+        ) {
+            var loading by remember { mutableStateOf(true) }
+            val assetJson =
+                it.arguments?.get("asset") as String
+            var asset by remember { mutableStateOf<Asset.Custom?>(null) }
+            LaunchedEffect(true) {
+                loading = true
+
+                asset =
+                    withContext(Dispatchers.Default) {
+                        parser.parse<Asset.Custom>(assetJson)
+                    }
+                loading = false
+            }
+            if (loading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.padding(10.dp))
+                }
+
+            } else {
+                Withdraw(wallet, asset ?: throw Exception("parsing failed"), nav)
             }
 
         }
@@ -206,12 +238,15 @@ fun Deposit(
                     launch(Dispatchers.IO) {
                         val asset = wallet.db.assetDao()
                             .getByNameAndIssuer(assetToDeposit.name, assetToDeposit.issuer)
+                        println(asset)
+                        println(asset?.id)
                         val assetId = asset?.id ?: -1
                         println("asset id $assetId")
-                        wallet.db.depositDao().addDeposit(
-                            me.rahimklaber.offlinewallet.db.Deposit(
+                        wallet.db.anchorTransactionDao().addTransaction(
+                            me.rahimklaber.offlinewallet.db.AnchorTransaction(
                                 id = interactiveDepositResponse["id"] as String,
-                                depositAssetId = assetId
+                                TransactionAssetId = assetId,
+                                kind = "deposit"
                             )
                         )
                     }
@@ -230,8 +265,138 @@ fun Deposit(
 }
 
 /**
- * Element with represents the deposit or withdraw possibility for an Asset
- * @param onNavigateBegin called when navigating to either a deposit or withdraw screen
+ * UI for withdrawing an asset using Sep-24
+ */
+@Composable
+fun Withdraw(
+    wallet: Wallet,
+    assetToWithdraw: Asset.Custom,
+    nav: NavController,
+    modifier: Modifier = Modifier
+) {
+    val scope = rememberCoroutineScope()
+    var authToken by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var doneLoading by remember { mutableStateOf(false) }
+    var doneFillingForm by remember { mutableStateOf(false) } /*to know when to send asset to anchor for withdrawal*/
+    val transferServerUrl = remember { assetToWithdraw.toml.getString("TRANSFER_SERVER_SEP0024") }
+    var withdrawId by remember { mutableStateOf("") }
+    var submittedTx by remember { mutableStateOf(false) } /*to remember if we allready payd the anchor*/
+    val jsonParser = Parser.default()
+    val context = LocalContext.current
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth(1f)
+            .padding(10.dp)
+    ) {
+        if (assetToWithdraw.tomlString == null) {
+            Text(text = "Something has gone wrong", Modifier.background(Color.Red))
+            return@Card
+        }
+        Column(
+            modifier = Modifier.padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Button(onClick = {
+                /**
+                 * Todo: I should really handle errors.
+                 */
+                scope.launch {
+                    loading = true
+                    authToken = wallet.getAuthToken(asset = assetToWithdraw)
+                    loading = false
+                    doneLoading = true
+                }
+            }) {
+                Text(text = "Start withdrawal process")
+            }
+            if (loading) {
+                CircularProgressIndicator(Modifier.padding(5.dp))
+            }
+            var interactiveRequestDone by remember { mutableStateOf(false) }
+            var interactiveDepositResponse by remember { mutableStateOf(JsonObject()) }
+            if (doneLoading) {
+                scope.launch(Dispatchers.Default) {
+                    interactiveDepositResponse =
+                        wallet.getInteractiveWithdrawSession(assetToWithdraw, authToken)
+                    interactiveRequestDone = true
+                    launch(Dispatchers.IO) {
+                        val asset = wallet.db.assetDao()
+                            .getByNameAndIssuer(assetToWithdraw.name, assetToWithdraw.issuer)
+                        val assetId = asset?.id ?: -1
+                        println("asset id $assetId")
+                        withdrawId = interactiveDepositResponse["id"] as String
+                        wallet.db.anchorTransactionDao().addTransaction(
+                            me.rahimklaber.offlinewallet.db.AnchorTransaction(
+                                id = interactiveDepositResponse["id"] as String,
+                                TransactionAssetId = assetId,
+                                kind = "withdraw"
+                            )
+                        )
+                    }
+                }
+                if (interactiveRequestDone) {
+                    val url = interactiveDepositResponse["url"] as String
+                    val base64EncodedUrl = url.encodeBase64UrlToString()
+                    println(url)
+                    // for some reason passing in the full url doesn't work, it seems to stop at "?"
+                    // so base64 encode it is
+                    doneFillingForm = true
+                    scope.launch(Dispatchers.IO) {
+                        var i = 0
+                        while (true) {
+                            i++
+                            if(i > 100){
+                                this.cancel() /*cancel after a certain amoutn of time*/
+                            }
+                            if(doneFillingForm){
+                                val response = "$transferServerUrl/transaction".httpGet(
+                                    listOf(
+                                        "id" to withdrawId
+                                    )
+                                )
+                                    .header(
+                                        "Authorization" to "Bearer $authToken"
+                                    ).response().third.component1() ?: return@launch
+                                val transactionJson =
+                                    (jsonParser.parse(ByteArrayInputStream(response)) as JsonObject)["transaction"] as JsonObject
+                                val status = transactionJson["status"] as String
+                                if (!submittedTx && status == "pending_user_transfer_start") {
+                                    val destination = transactionJson["withdraw_anchor_account"] as String
+                                    val amount = transactionJson["amount_in"] as String
+                                    val memo = transactionJson["withdraw_memo"] as String
+                                    loading = true
+                                    doneLoading = false
+                                    val txResponse =
+                                        wallet.payAnchorAsync(destination, amount, memo, assetToWithdraw).await()
+                                    submittedTx = true
+                                    loading = false
+
+                                    val succeededOrFailed = if (txResponse.isSuccess) "succeeded" else "Failed"
+                                    Toast.makeText(
+                                        context,
+                                        "deposit transaction  $succeededOrFailed",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    this.cancel()
+                                }
+                            }else{
+                                delay(6000)
+                            }
+                        }
+                    }
+                    nav.navigate("interactivesession/$base64EncodedUrl")
+                }
+            }
+        }
+    }
+}
+
+
+/**
+ * Element with represents the anchorTransaction or withdraw possibility for an Asset
+ * @param onNavigateBegin called when navigating to either a anchorTransaction or withdraw screen
  * @param onNavigateEnd called when done with navigationg
  *
  * [onNavigateBegin] and [onNavigateEnd] are used to add a loading animation.
@@ -280,7 +445,16 @@ fun Asset(
                 }, Modifier.padding(5.dp)) {
                     Text("deposit")
                 }
-                Button(onClick = { /*TODO*/ }, Modifier.padding(5.dp)) {
+                Button(onClick = {
+                    scope.launch(Dispatchers.Default) {
+                        val assetJson = klaxon.toJsonString(asset)
+                        onNavigateBegin()
+                        withContext(Dispatchers.Main) {
+                            nav.navigate("withdraw/$assetJson")
+                        }
+                        onNavigateEnd()
+                    }
+                }, Modifier.padding(5.dp)) {
                     Text("withdraw")
                 }
             }

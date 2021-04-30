@@ -19,9 +19,10 @@ data class Asset(
     @PrimaryKey(autoGenerate = true) @ColumnInfo(name="asset_id") var id : Int = 0
 }
 
-@Entity(foreignKeys = [ForeignKey(entity = Asset::class,parentColumns = ["asset_id"],childColumns = ["deposit_asset_id"])])
-data class Deposit(
-    @PrimaryKey @ColumnInfo(name = "deposit_id") var id: String,
+@Entity(foreignKeys = [ForeignKey(entity = Asset::class,parentColumns = ["asset_id"],childColumns = ["transaction_asset_id"])])
+data class AnchorTransaction(
+    @PrimaryKey @ColumnInfo(name = "transaction_id") var id: String,
+    @ColumnInfo(name="kind") var kind : String,
     @ColumnInfo(name = "status") var status: String? = null,
     @ColumnInfo(name = "status_eta") var statusEta: Long?= null,
     @ColumnInfo(name = "amount_in") var amountIn: String?= null,
@@ -33,17 +34,17 @@ data class Deposit(
     @ColumnInfo(name = "external_transaction_id") var externalTransactionId: String?= null,
     @ColumnInfo(name = "external_extra") var externalExtra: String?= null,
     @ColumnInfo(name = "external_extra_text") var external_extra_text: String?= null,
-    @ColumnInfo(name = "deposit_memo") var depositMemo: String?= null,
-    @ColumnInfo(name = "deposit_memo_type") var depositMemoType: String?= null,
+/*    @ColumnInfo(name = "deposit_memo") var depositMemo: String?= null,
+    @ColumnInfo(name = "deposit_memo_type") var depositMemoType: String?= null,*/
     @ColumnInfo(name = "more_info_url") var MoreInfoUrl: String?= null,
     @ColumnInfo(name = "to") var to: String?= null,
     @ColumnInfo(name = "from") var from: String?= null,
-    @ColumnInfo(name="deposit_asset_id",index = true) var depositAssetId: Int,
+    @ColumnInfo(name="transaction_asset_id",index = true) var TransactionAssetId: Int,
 
 
 )
 //Todo: how to do this better
-//data class DepositWithAsset(
+//data class AnchorTransactionWithAsset(
 //    @ColumnInfo(name = "deposit_id") var depositId:  String,
 //    @ColumnInfo(name = "status") var status: String,
 //    @ColumnInfo(name = "status_eta") var statusEta: Long,
@@ -67,7 +68,7 @@ data class Deposit(
 //    @ColumnInfo(name = "auth_token") var authToken: String?,
 //@ColumnInfo(name = "icon_link") var iconLink : String?
 //)
-data class DepositWithAsset(
-    @Embedded var deposit : Deposit,
+data class AnchorTransactionWithAsset(
+    @Embedded var anchorTransaction : AnchorTransaction,
     @Embedded var asset: Asset
 )

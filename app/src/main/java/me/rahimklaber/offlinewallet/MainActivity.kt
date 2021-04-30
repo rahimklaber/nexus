@@ -21,11 +21,11 @@ class MainActivity : AppCompatActivity() {
         setContent {
             OfflineWalletTheme {
                 // A surface container using the 'background' color from the theme
-                val seed = "SDGJHP5WUXNDQLRLBOMIM2TSD2JZWYYLTSM5JI7LYWUIT6SQ7XMNLXXA"
-                val pubKey = "GBZTOCTK7UQXL2B7ABYWTLZDHCKN2YVZKBKPQJ75IL4YAYJ3OGE4FEFQ"
+                val seed = "SBIBTPLJQPCI3M4J2WJ3NFNVEZZLQGTBN47CDNDKO72OAMUNCPEJDRTR"
+                val pubKey = "GCPUOL3H74I5YFHEJSC6A5O23O3HJ6BJVELQND4FW6VAKPZ3RX4UHWZX"
                 val db = Room.databaseBuilder(
                     applicationContext,
-                    me.rahimklaber.offlinewallet.db.Database::class.java,"nexus_db",
+                    me.rahimklaber.offlinewallet.db.Database::class.java,"nexus3_db",
                 ).fallbackToDestructiveMigration().build()
                 val wallet = Wallet(keyPair = KeyPair.fromSecretSeed(seed),db,"coolman")
                 Surface(color = MaterialTheme.colors.background) {
