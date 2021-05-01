@@ -83,6 +83,12 @@ fun MainScreen(wallet : Wallet) {
             ) {
                 Text("Deposits / withdrawals status")
             }
+            Button(
+                onClick = { nav.navigate("assets");scope.launch { if (scaffoldState.drawerState.isOpen) scaffoldState.drawerState.close() else scaffoldState.drawerState.open() } },
+                Modifier.padding(5.dp)
+            ) {
+                Text("Assets")
+            }
 
         }
     ) {
@@ -113,6 +119,10 @@ fun MainScreen(wallet : Wallet) {
             composable("depositsOrWithdrawalStatus") {
                 title = "Check Deposits/Withdrawals status"
                 CheckDepositsWithdrawalScreen(wallet = wallet)
+            }
+            composable("assets") {
+                title = "Assets"
+                AssetsScreen(wallet = wallet)
             }
         }
 

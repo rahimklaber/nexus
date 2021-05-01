@@ -4,7 +4,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
-
 import com.beust.klaxon.JsonObject
 import com.beust.klaxon.Parser
 import com.github.kittinunf.fuel.Fuel
@@ -15,8 +14,8 @@ import com.github.kittinunf.fuel.util.decodeBase64ToString
 import com.moandjiezana.toml.Toml
 import io.jsonwebtoken.*
 import kotlinx.coroutines.*
-import me.rahimklaber.offlinewallet.db.Database
 import me.rahimklaber.offlinewallet.db.AnchorTransaction
+import me.rahimklaber.offlinewallet.db.Database
 import org.stellar.sdk.*
 import org.stellar.sdk.requests.EventListener
 import org.stellar.sdk.responses.SubmitTransactionResponse
@@ -352,21 +351,22 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
 
     suspend fun getAuthToken(asset: Asset.Custom): String {
         val jwtdb = getAuthTokenFromDb(asset = asset)
-        val splitJwt : List<String>? = jwtdb?.split(".")
+        val splitJwt: List<String>? = jwtdb?.split(".")
         println(jwtdb)
-        return if(jwtdb!=null && splitJwt != null){
-            val parsedJwtBody = jsonParser.parse(StringBuilder(splitJwt[1].decodeBase64ToString()!!)) as JsonObject
-            return if((parsedJwtBody["exp"] as Number).toLong() < Date().time){
+        return if (jwtdb != null && splitJwt != null) {
+            val parsedJwtBody =
+                jsonParser.parse(StringBuilder(splitJwt[1].decodeBase64ToString()!!)) as JsonObject
+            return if ((parsedJwtBody["exp"] as Number).toLong() < Date().time) {
                 println("token expired")
                 getAuthTokenFromNetwork(asset = asset)
-            }else{
+            } else {
 //                println("not expired")
 //                println("date expired : ${(parsedJwtBody["exp"] as Number).toLong()}")
 //                println("current Date ${Date().time}")
                 jwtdb
             }
 
-        }else{
+        } else {
             getAuthTokenFromNetwork(asset = asset)
         }
     }
@@ -418,7 +418,8 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
                 authToken,
                 asset.iconLink as String
             ).also {
-                it.id = db.assetDao().getByNameAndIssuer(asset.name,asset.issuer)?.id ?:0//Todo do this better
+                it.id = db.assetDao().getByNameAndIssuer(asset.name, asset.issuer)?.id
+                    ?: 0//Todo do this better
             }
         )
         authToken
@@ -480,9 +481,9 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
     ): AnchorTransaction? {
         val asset = getAssetByNameAndIssuer(dbAsset.name, dbAsset.issuer) ?: return null
         val transferServerUrl = asset.toml.getString("TRANSFER_SERVER_SEP0024")
-        return withContext(Dispatchers.IO){
+        return withContext(Dispatchers.IO) {
             println("$transferServerUrl/transaction")
-            val authToken= getAuthToken(asset = asset)
+            val authToken = getAuthToken(asset = asset)
             val response = "$transferServerUrl/transaction".httpGet(
                 listOf(
                     "id" to id
@@ -519,19 +520,24 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
      * this used to pay the anchor to withdraw your funds.
      * This is done using a `payment` operation and not `path-payment`.
      */
-    suspend fun payAnchorAsync(recipient : String,amount : String, memo : String,asset: Asset.Custom) : Deferred<SubmitTransactionResponse> = coroutineScope{
+    suspend fun payAnchorAsync(
+        recipient: String,
+        amount: String,
+        memo: String,
+        asset: Asset.Custom
+    ): Deferred<SubmitTransactionResponse> = coroutineScope {
 
         val txDeferred = async(Dispatchers.Default) {
             val innterTx =
-            org.stellar.sdk.Transaction.Builder(account, Network.TESTNET)
-                .addOperation(
-                    PaymentOperation.Builder(recipient, asset.toStellarSdkAsset(), amount)
-                        .build()
-                )
-                .setTimeout(60)
-                .setBaseFee(500)
-                .addMemo(Memo.hash(memo))
-                .build()
+                org.stellar.sdk.Transaction.Builder(account, Network.TESTNET)
+                    .addOperation(
+                        PaymentOperation.Builder(recipient, asset.toStellarSdkAsset(), amount)
+                            .build()
+                    )
+                    .setTimeout(60)
+                    .setBaseFee(500)
+                    .addMemo(Memo.hash(memo))
+                    .build()
             innterTx.sign(keyPair)
             innterTx
         }
@@ -539,5 +545,29 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
             server.submitTransaction(txDeferred.await())
         }
     }
+
+    /**
+     * add a trustline for the specified asset.
+     */
+    suspend fun addAssetAsync(assetToAdd: Asset.Custom): Deferred<SubmitTransactionResponse> =
+        coroutineScope {
+            val txDeferred = async(Dispatchers.Default) {
+                val innerTx = org.stellar.sdk.Transaction.Builder(account, Network.TESTNET)
+                    .addOperation(
+                        ChangeTrustOperation.Builder(
+                            assetToAdd.toStellarSdkAsset(), Int.MAX_VALUE.toString()
+                        ).build()
+                    )
+                    .setTimeout(60)
+                    .setBaseFee(500)
+                    .build()
+                innerTx.sign(keyPair)
+                innerTx
+            }
+            async(Dispatchers.IO) {
+                server.submitTransaction(txDeferred.await())
+            }
+
+        }
 
 }
