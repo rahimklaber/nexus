@@ -67,11 +67,16 @@ fun DepositOrWithdrawScreen(wallet: Wallet, modifier: Modifier = Modifier) {
             var navigatingToDepositOrWithdraw by remember { mutableStateOf(false) }
 
             if (!navigatingToDepositOrWithdraw) {
-                Card(modifier = modifier.padding(10.dp)) {
+                Card(modifier = modifier.padding(10.dp).fillMaxWidth()) {
                     LazyColumn(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         contentPadding = PaddingValues(10.dp)
                     ) {
+                        if(assets.isEmpty()){
+                            item {
+                                Text(text = "You have no assets")
+                            }
+                        }
                         items(assets) {
                             Asset(
                                 asset = it,

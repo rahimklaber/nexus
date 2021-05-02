@@ -130,13 +130,15 @@ fun SendByUserName(wallet: Wallet, modifier: Modifier = Modifier) {
                             )
                         }.await()
 
-                        val succeededOrFailed = if (response.isSuccess) "Succeeded" else "Failed"
-                        Toast.makeText(
-                            context,
-                            "Transaction $succeededOrFailed",
-                            Toast.LENGTH_SHORT
-                        ).show()
 
+                        val succeededOrFailed = if (response.isSuccess) "Succeeded" else "Failed"
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                context,
+                                "Transaction $succeededOrFailed",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                         loading = false
 
                     }

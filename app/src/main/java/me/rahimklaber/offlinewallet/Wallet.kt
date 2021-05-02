@@ -16,6 +16,7 @@ import io.jsonwebtoken.*
 import kotlinx.coroutines.*
 import me.rahimklaber.offlinewallet.db.AnchorTransaction
 import me.rahimklaber.offlinewallet.db.Database
+import me.rahimklaber.offlinewallet.networking.AccountResolver
 import org.stellar.sdk.*
 import org.stellar.sdk.requests.EventListener
 import org.stellar.sdk.responses.SubmitTransactionResponse
@@ -24,6 +25,12 @@ import org.stellar.sdk.responses.operations.PathPaymentStrictReceiveOperationRes
 import org.stellar.sdk.responses.operations.PaymentOperationResponse
 import shadow.com.google.common.base.Optional
 import java.io.ByteArrayInputStream
+import java.text.DateFormat
+import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.*
 
 /**
@@ -58,7 +65,11 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
         GlobalScope.launch(Dispatchers.IO) {
             delay(1000)
             updateBalance()
-            server.payments().forAccount(keyPair.accountId).stream(listener)
+            try{
+                server.payments().forAccount(keyPair.accountId).stream(listener)
+            }catch (e  : Exception){
+                println(e)
+            }
         }
 
 
@@ -120,10 +131,10 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
      * find all assets which an account has trustlines to.
      * Todo : should maybe put this somewhere else?
      */
-    fun getAssetsForAccount(accountId: String): List<Asset> {
-        return server
+    suspend fun getAssetsForAccount(nickname: String): List<Asset> = withContext(Dispatchers.IO){
+        server
             .accounts()
-            .account(accountId)
+            .account(resolveAddressFromNickname(nickname = nickname))
             .balances.flatMap {
                 if (it.assetType == "native") {
                     listOf()
@@ -167,7 +178,8 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
                         receiveAsset = asset,
                         sendAmount = payment.amount.toFloat(),
                         receiveAmount = payment.amount.toFloat(),
-                        date = /*SimpleDateFormat().parse(payment.createdAt.removeSuffix("Z")) ?:*/ Date(),
+                        date = Date.from(Instant.ofEpochSecond((dateParser.parseBest(payment.createdAt,LocalDateTime::from,LocalDateTime::from) as LocalDateTime).toEpochSecond(
+                            zoneOffset))),/*Date.from(Instant.from(dateParser.parseBest(transactionJson["started_at"] as String,LocalDateTime::from,LocalDateTime::from) as LocalDateTime))*/
                         description = payment.transaction.orNull()?.memo?.toString() ?: "No desc",
                         pathPayment = false
                     )
@@ -180,7 +192,8 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
                         receiveAsset = asset,
                         sendAmount = payment.amount.toFloat(),
                         receiveAmount = payment.amount.toFloat(),
-                        date = /*SimpleDateFormat().parse(payment.createdAt.removeSuffix("Z")) ?:*/ Date(),
+                        date = Date.from(Instant.ofEpochSecond((dateParser.parseBest(payment.createdAt,LocalDateTime::from,LocalDateTime::from) as LocalDateTime).toEpochSecond(
+                            zoneOffset))),
                         description = payment.transaction.orNull()?.memo?.toString() ?: "No desc",
                         pathPayment = false
 
@@ -212,7 +225,8 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
                     receiveAsset = destinationAsset,
                     sendAmount = pathPayment.sourceAmount.toFloat(),
                     receiveAmount = pathPayment.amount.toFloat(),
-                    date = /*SimpleDateFormat().parse(payment.createdAt.removeSuffix("Z")) ?:*/ Date(),
+                    date = Date.from(Instant.ofEpochSecond((dateParser.parseBest(pathPayment.createdAt,LocalDateTime::from,LocalDateTime::from) as LocalDateTime).toEpochSecond(
+                        zoneOffset))),
                     description = pathPayment.transaction.orNull()?.memo?.toString()
                         ?: "No desc",
                     pathPayment = true
@@ -243,8 +257,8 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
             }
             if (tx != null) {
                 addTransaction(tx)
-                updateBalance()
             }
+            updateBalance()
         }
 
         override fun onFailure(error: Optional<Throwable>?, responseCode: Optional<Int>?) {
@@ -300,7 +314,7 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
      *
      */
     suspend fun sendAssetAsync(
-        recipientAccountId: String,
+        recipientNickname: String,
         recipientAsset: Asset,
         sendingAsset: Asset,
         amount: String,
@@ -309,6 +323,7 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
 
         val tx =/*TODO: Dynamic sendMax calculation*/ /*TODO add config somewhere for network*/
             withContext(this.coroutineContext) {
+
                 var txBuilder = org.stellar.sdk.Transaction.Builder(
                     account,
                     Network.TESTNET
@@ -316,7 +331,7 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
                     .addOperation(
                         if (recipientAsset == sendingAsset) {
                             PaymentOperation.Builder(
-                                recipientAccountId,
+                                resolveAddressFromNickname(recipientNickname),
                                 recipientAsset.toStellarSdkAsset(),
                                 amount
                             )
@@ -327,7 +342,7 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
                             PathPaymentStrictReceiveOperation.Builder(
                                 sendingAsset.toStellarSdkAsset(),
                                 "10000000",
-                                recipientAccountId,
+                                resolveAddressFromNickname(recipientNickname),
                                 recipientAsset.toStellarSdkAsset(),
                                 amount
                             )
@@ -494,7 +509,6 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
                 ).response().third.component1() ?: return@withContext null
             val transactionJson =
                 (jsonParser.parse(ByteArrayInputStream(response)) as JsonObject)["transaction"] as JsonObject
-
             val transaction = AnchorTransaction(
                 id = id,
                 kind = transactionJson["kind"] as String,
@@ -505,7 +519,8 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
                 amountFee = transactionJson["amount_fee"] as String?,
                 externalTransactionId = transactionJson["external_transaction_url"] as String?,
                 MoreInfoUrl = transactionJson["more_info_url"] as String,
-                //Todo figure out how to parse Dates
+                startedAt= Date.from(Instant.ofEpochSecond((dateParser.parseBest(transactionJson["started_at"] as String,LocalDateTime::from,LocalDateTime::from) as LocalDateTime).toEpochSecond(
+                    zoneOffset))),
                 TransactionAssetId = dbAsset.id
             )
             db.anchorTransactionDao().addTransaction(anchorTransaction = transaction)
@@ -569,5 +584,45 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
             }
 
         }
+
+    /**
+     * Resolves nickname used by the wallet, to the stellar public key.
+     */
+    suspend fun resolveAddressFromNickname(nickname: String): String {
+        val dbResolvedAddress = withContext(Dispatchers.IO){
+            db.userDao().getByNickname(nickname = nickname)
+        }
+        return if(dbResolvedAddress != null){
+            dbResolvedAddress.publicKey
+        }else{
+            val publicKeyResponse = AccountResolver(nickname = nickname)!! // assume it can never be null
+            db.userDao().addUser(me.rahimklaber.offlinewallet.db.User(publicKeyResponse,nickname))
+            publicKeyResponse
+        }
+
+    }
+
+    /**
+     * Resolves nickname used by the wallet, to the stellar public key.
+     */
+    suspend fun resolveNicknameFromAddress(address: String): String? {
+        val dbResolvedAddress = withContext(Dispatchers.IO){
+            db.userDao().getByPublicKey(address)
+        }
+        return if(dbResolvedAddress != null){
+            dbResolvedAddress.nickName
+        }else{
+            val nickname = AccountResolver(nickname = address) ?: return null
+            db.userDao().addUser(me.rahimklaber.offlinewallet.db.User(nickname,address))
+            nickname
+        }
+
+    }
+    companion object{
+        val dateParser by lazy { DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss[.SSS]'Z'") }
+        val zoneOffset by lazy { ZoneOffset.ofTotalSeconds(TimeZone.getDefault().getOffset(Date().time) /1000) }
+
+    }
+
 
 }

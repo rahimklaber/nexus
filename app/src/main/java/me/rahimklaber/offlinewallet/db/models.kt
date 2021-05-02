@@ -4,9 +4,20 @@ import androidx.room.*
 import java.util.*
 // TODO : should probably rename the classes with a `db` prefix to avoid confusion
 
-@Entity
+
+@Entity(indices = [Index(value = ["nick_name"],unique = true)])
 data class User(
     @PrimaryKey @ColumnInfo(name = "public_key") var publicKey: String,
+    @ColumnInfo(name="nick_name") var nickName: String,
+)
+
+/**
+ * Table for my account
+ */
+@Entity
+data class Account(
+    @PrimaryKey @ColumnInfo(name="nick_name") var nickName: String,
+    @ColumnInfo(name="private_key") var privateKey : String
 )
 
 @Entity(indices = [Index(value = ["asset_name","asset_issuer"],unique = true)])

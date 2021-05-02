@@ -1,5 +1,6 @@
 package me.rahimklaber.offlinewallet.view
 
+import android.text.format.DateFormat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusModifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,6 +28,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigate
 import androidx.navigation.compose.rememberNavController
 import com.skydoves.landscapist.coil.CoilImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import me.rahimklaber.offlinewallet.*
 import me.rahimklaber.offlinewallet.R
@@ -110,7 +113,7 @@ fun MainScreen(wallet : Wallet) {
             }
             composable("transactions") {
                 title = "Transactions"
-                TransactionsScreen(transactions = wallet.transactions)
+                TransactionsScreen(transactions = wallet.transactions,wallet = wallet)
             }
             composable("depositOrWithdraw") {
                 title = "deposit or Withdraw"
@@ -269,7 +272,7 @@ fun HomeScreen(modifier: Modifier = Modifier, nav: NavController, wallet: Wallet
 
         item {
             RecentTransactions(
-                transactions = wallet.transactions, modifier = Modifier
+                transactions = wallet.transactions,wallet, modifier = Modifier
                     /*.weight(1f)*/
                     .padding(10.dp), nav = nav
             )
@@ -289,7 +292,7 @@ fun SendOptionsRow(modifier: Modifier = Modifier, nav: NavController) {
     Card(modifier = modifier.fillMaxWidth(1f)) {
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = "Send", fontWeight = FontWeight(759))
+            Text(text = "Send", fontWeight = FontWeight(759),fontSize = 20.sp)
             Row(modifier = Modifier, horizontalArrangement = Arrangement.SpaceBetween) {
                 Card(
                     modifier.clickable {
@@ -344,12 +347,17 @@ fun Balance(modifier: Modifier = Modifier, balances: Map<Asset.Custom, String>) 
 
     Card(modifier = modifier.fillMaxWidth(1f)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(fontWeight = FontWeight(600), text = "Balance")
+            Text(fontWeight = FontWeight(600), text = "Balance",fontSize = 20.sp)
 
             LazyRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
+                if(balances.isEmpty()){
+                    item { 
+                        Text("You have no assets")
+                    }
+                }
                 items(balances.toList()) { (asset, assetBalance) ->
 //                        Image(painterResource(R.drawable.uscoin), null, modifier = Modifier.height(50.dp))
                     Card(
@@ -439,18 +447,21 @@ fun BottomRow(
 @Composable
 fun RecentTransactions(
     transactions: List<Transaction>,
+    wallet: Wallet,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(15.dp),
     nav: NavController
 ) {
     val txsToUse = if (transactions.size > 4) transactions.sortedByDescending { it.date }
         .subList(0, 5) else transactions.sortedByDescending { it.date }
-    Card(modifier = modifier) {
+    Card(modifier = modifier.fillMaxWidth()) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = "Recent Transactions")
-
+            Text(text = "Recent Transactions",fontSize = 20.sp,fontWeight = FontWeight(600) )
+            if(txsToUse.isEmpty()){
+                Text(text = "there are no transactions")
+            }
             for (tx in txsToUse) {
-                Transaction(transaction = tx, modifier = Modifier.padding(5.dp))
+                Transaction(transaction = tx,wallet = wallet, modifier = Modifier.padding(5.dp))
             }
         }
     }
@@ -464,10 +475,27 @@ fun RecentTransactions(
  * @param onClick onclick handler, most likely for when there is a more info page for a transaction
  */
 @Composable
-fun Transaction(transaction: Transaction, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
+fun Transaction(transaction: Transaction, wallet: Wallet, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
+
+    val scope = rememberCoroutineScope()
+    var recipientOrSender by remember{ mutableStateOf("loading")}
+    var loading by remember{ mutableStateOf(true)}
+    val context = LocalContext.current
+    LaunchedEffect(key1 = true){
+        if(loading){
+            launch(Dispatchers.IO) {
+                val toResolve = when (transaction) {
+                    is Transaction.Received -> transaction.from.name
+                    is Transaction.Sent -> transaction.recipient.name
+                }
+                recipientOrSender = wallet.resolveNicknameFromAddress(toResolve) ?: "External Account"
+                loading = false
+            }
+        }
+    }
     Card(
         modifier
-            .height(50.dp)
+//            .height(50.dp)
             .fillMaxWidth(1f),
         backgroundColor = MaterialTheme.colors.surfaceVariant
     ) {
@@ -504,11 +532,11 @@ fun Transaction(transaction: Transaction, modifier: Modifier = Modifier, onClick
             Spacer(modifier = Modifier.width(100.dp))
             Column {
                 val text = when (transaction) {
-                    is Transaction.Received -> "From ${transaction.from.name}"
-                    is Transaction.Sent -> "To ${transaction.recipient.name}"
+                    is Transaction.Received -> "From $recipientOrSender"
+                    is Transaction.Sent -> "To $recipientOrSender"
                 }
                 Text(text = text)
-                Text(fontWeight = FontWeight(10), text = transaction.date.toString())
+                Text(fontWeight = FontWeight(10), text = DateFormat.getDateFormat(context).format(transaction.date))
 
             }
         }

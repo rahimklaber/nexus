@@ -23,6 +23,22 @@ interface UserDao {
 
     @Query("select * from user where user.public_key = :publicKey")
     fun getByPublicKey(publicKey: String): User?
+
+    @Query("select * from user where user.nick_name = :nickname")
+    fun getByNickname(nickname: String): User?
+
+    @Query("select * from user")
+    fun getAll() : List<User>
+}
+
+@Dao
+interface AccountDao {
+
+    @Insert(onConflict = REPLACE)
+    fun addAccount(account: Account)
+
+    @Query("select * from account LIMIT 1")
+    fun get() : Account?
 }
 
 /**

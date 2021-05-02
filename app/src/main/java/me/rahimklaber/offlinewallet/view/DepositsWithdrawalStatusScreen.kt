@@ -1,5 +1,6 @@
 package me.rahimklaber.offlinewallet.view
 
+import android.text.format.DateFormat
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -7,6 +8,7 @@ import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.skydoves.landscapist.coil.CoilImage
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +68,7 @@ fun DepositStatus(depositParam: AnchorTransactionWithAsset, wallet: Wallet, modi
     val asset = depositParam.asset
     var reloading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     Card(
         modifier,
         backgroundColor = MaterialTheme.colors.surfaceVariant
@@ -89,9 +92,10 @@ fun DepositStatus(depositParam: AnchorTransactionWithAsset, wallet: Wallet, modi
                     Text(text = asset.name)
                 }
                 Spacer(modifier = Modifier.width(5.dp))
+                val date = if(deposit.startedAt==null) null else DateFormat.getDateFormat(context).format(deposit.startedAt!!)
                 Column {
                     Text(text = "status : ${deposit.status ?: "n/a"}")
-                    Text(text = "date started: ${deposit.startedAt ?: "n/a"}")
+                    Text(text = "date started: ${ date ?: "n/a"}")
                     Text(text = "amount deposited: ${deposit.amountIn ?: "n/a"}")
                 }
                 //Todo: better way to put button at the end
