@@ -30,6 +30,10 @@ val assets = listOf(
         "BRLT",
         "GB7TAYRUZGE6TVT7NHP5SMIZRNQA6PLM423EYISAOAP3MKYIQMVYP2JO",
         "https://testnet-sep.stablex.cloud/brlt-logo.png"
+    ) ,   Asset.Custom(
+        "ARST",
+        "GB7TAYRUZGE6TVT7NHP5SMIZRNQA6PLM423EYISAOAP3MKYIQMVYP2JO",
+        "https://testnet-sep.stablex.cloud/arst-logo.png"
     )
 )
 

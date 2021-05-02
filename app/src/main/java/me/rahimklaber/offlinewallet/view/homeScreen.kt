@@ -20,6 +20,7 @@ import androidx.compose.ui.focus.focusModifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -62,11 +63,20 @@ fun MainScreen(wallet : Wallet) {
             })
         },
         drawerContent = {
+            Spacer(Modifier.height(20.dp))
+            Text(modifier=Modifier.padding(5.dp),fontWeight = FontWeight(600), text = "Welcome ${wallet.user.name}", fontSize = 20.sp,textDecoration = TextDecoration.Underline)
+            Spacer(Modifier.height(20.dp))
             Button(
                 onClick = { nav.navigate("home");scope.launch { if (scaffoldState.drawerState.isOpen) scaffoldState.drawerState.close() else scaffoldState.drawerState.open() } },
                 Modifier.padding(5.dp)
             ) {
                 Text("Home")
+            }
+            Button(
+                onClick = { nav.navigate("assets");scope.launch { if (scaffoldState.drawerState.isOpen) scaffoldState.drawerState.close() else scaffoldState.drawerState.open() } },
+                Modifier.padding(5.dp)
+            ) {
+                Text("Assets")
             }
             Button(
                 onClick = { nav.navigate("transactions");scope.launch { if (scaffoldState.drawerState.isOpen) scaffoldState.drawerState.close() else scaffoldState.drawerState.open() } },
@@ -86,12 +96,7 @@ fun MainScreen(wallet : Wallet) {
             ) {
                 Text("Deposits / withdrawals status")
             }
-            Button(
-                onClick = { nav.navigate("assets");scope.launch { if (scaffoldState.drawerState.isOpen) scaffoldState.drawerState.close() else scaffoldState.drawerState.open() } },
-                Modifier.padding(5.dp)
-            ) {
-                Text("Assets")
-            }
+
 
         }
     ) {
@@ -126,6 +131,10 @@ fun MainScreen(wallet : Wallet) {
             composable("assets") {
                 title = "Assets"
                 AssetsScreen(wallet = wallet)
+            }
+            composable("createqr"){
+                title = "Create Payment Request"
+                CreateQrForReceiveScreen(wallet = wallet)
             }
         }
 
@@ -262,6 +271,7 @@ fun SendScreen(modifier: Modifier = Modifier) {
 fun HomeScreen(modifier: Modifier = Modifier, nav: NavController, wallet: Wallet) {
 
     LazyColumn(modifier = modifier) {
+
         item {
             Balance(Modifier.padding(10.dp), wallet.assetsBalances)
 
@@ -269,6 +279,9 @@ fun HomeScreen(modifier: Modifier = Modifier, nav: NavController, wallet: Wallet
         item {
             SendOptionsRow(Modifier.padding(10.dp), nav)
         }
+//        item {
+//            ReceiveOptionsRow(modifier = Modifier.padding(10.dp),nav)
+//        }
 
         item {
             RecentTransactions(
@@ -294,30 +307,30 @@ fun SendOptionsRow(modifier: Modifier = Modifier, nav: NavController) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(text = "Send", fontWeight = FontWeight(759),fontSize = 20.sp)
             Row(modifier = Modifier, horizontalArrangement = Arrangement.SpaceBetween) {
-                Card(
-                    modifier.clickable {
-                        nav.navigate("sendByUserName")
-                    },
-                    backgroundColor = MaterialTheme.colors.surfaceVariant
-                ) {
-
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "Online qr")
-                        Icon(Icons.Default.QrCode, null, modifier.size(40.dp))
-                    }
-                }
-                Card(
-                    modifier.clickable {
-                        nav.navigate("sendByUserName")
-                    },
-                    backgroundColor = MaterialTheme.colors.surfaceVariant
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "Offline qr")
-                        Icon(Icons.Default.QrCode, "Offline qr", modifier.size(40.dp))
-
-                    }
-                }
+//                Card(
+//                    modifier.clickable {
+//                        nav.navigate("sendByUserName")
+//                    },
+//                    backgroundColor = MaterialTheme.colors.surfaceVariant
+//                ) {
+//
+//                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+//                        Text(text = "QR code")
+//                        Icon(Icons.Default.QrCode, null, modifier.size(40.dp))
+//                    }
+//                }
+//                Card(
+//                    modifier.clickable {
+//                        nav.navigate("sendByUserName")
+//                    },
+//                    backgroundColor = MaterialTheme.colors.surfaceVariant
+//                ) {
+//                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+//                        Text(text = "Offline qr")
+//                        Icon(Icons.Default.QrCode, "Offline qr", modifier.size(40.dp))
+//
+//                    }
+//                }
                 Card(
                     modifier.clickable {
                         nav.navigate("sendByUserName")
@@ -328,6 +341,31 @@ fun SendOptionsRow(modifier: Modifier = Modifier, nav: NavController) {
                         Text(text = "username")
                         Icon(Icons.Default.Face, "Offline qr", modifier.size(40.dp))
 
+                    }
+                }
+            }
+
+        }
+    }
+
+}
+@Composable
+fun ReceiveOptionsRow(modifier: Modifier = Modifier, nav: NavController) {
+    Card(modifier = modifier.fillMaxWidth(1f)) {
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = "Receive", fontWeight = FontWeight(759),fontSize = 20.sp)
+            Row(modifier = Modifier, horizontalArrangement = Arrangement.SpaceBetween) {
+                Card(
+                    modifier.clickable {
+                        nav.navigate("createqr")
+                    },
+                    backgroundColor = MaterialTheme.colors.surfaceVariant
+                ) {
+
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = "QR code")
+                        Icon(Icons.Default.QrCode, null, modifier.size(40.dp))
                     }
                 }
             }

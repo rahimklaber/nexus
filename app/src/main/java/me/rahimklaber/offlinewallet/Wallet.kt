@@ -253,7 +253,7 @@ class Wallet(val keyPair: KeyPair, val db: Database, nickname: String) : ViewMod
             val tx = when (response.type) {
                 "payment" -> handlePayment(response as PaymentOperationResponse)
                 "path_payment_strict_receive" -> handlePathPaymentStrictReceive(response as PathPaymentStrictReceiveOperationResponse)
-                else -> return /*we don't support anything else.*/
+                else -> null /*we don't support anything else.*/
             }
             if (tx != null) {
                 addTransaction(tx)

@@ -35,6 +35,7 @@ fun SendOnlineQr(wallet: Wallet) {
  */
 @Composable
 fun SendByUserName(wallet: Wallet, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     Card(
         modifier = modifier
             .fillMaxWidth(1f)
@@ -116,7 +117,7 @@ fun SendByUserName(wallet: Wallet, modifier: Modifier = Modifier) {
 
 
                 Spacer(modifier = Modifier.height(20.dp))
-                val context = LocalContext.current
+
                 Button(onClick = {
                     scope.launch {
                         loading = true
