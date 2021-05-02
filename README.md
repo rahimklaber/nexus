@@ -1,5 +1,5 @@
 # Nexus
-
+demo video : [demo](https://www.youtube.com/watch?v=9aku_3SGRsw)
 ## Introduction
 I have built a stablecoin wallet on Stellar called Nexus. It allows you to add deposit and withdraw stablecoins using SEP-24 and can therefore be used for cross-border payments. It removes the complexity of blockchain by using nicknames, which are federated addresses behind the scenes, instead of public keys.
 
