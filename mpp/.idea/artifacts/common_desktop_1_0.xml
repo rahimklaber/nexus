@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="common-desktop-1.0">
+    <output-path>C:\Users\rahim\Desktop\nexus_stellar_wallet\mpp\common\build\libs</output-path>
+    <root id="archive" name="common-desktop-1.0.jar">
+      <element id="module-output" name="nexus_mpp.common.desktopMain" />
+    </root>
+  </artifact>
+</component>
